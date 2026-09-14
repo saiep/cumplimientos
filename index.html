@@ -1,6 +1,4 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Consolidado SAIEP - La Anónima</title>
@@ -161,10 +159,38 @@
         .admin-access button { border: 0; background: transparent; color: #7f8c8d; font-size: .78em; cursor: pointer; padding: 5px 8px; }
         .admin-access button:hover { color: #2c3e50; text-decoration: underline; }
         .public-note { text-align:center; margin:-4px 0 12px; font-size:.78em; color:#7f8c8d; }
+        /* ── CARGA INICIAL ── */
+        #initialLoading {
+            position: fixed; inset: 0; background: rgba(255,255,255,.94);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 10000; backdrop-filter: blur(2px);
+        }
+        #initialLoading .initial-loading-box {
+            width: min(92%, 430px); background: #fff; border-radius: 16px;
+            padding: 30px 26px; text-align:center; box-shadow: 0 15px 45px rgba(0,0,0,.18);
+            border: 1px solid #e5e9f2;
+        }
+        #initialLoading .initial-loading-title { color:#2c3e50; font-size:1.15em; font-weight:800; margin-bottom:8px; }
+        #initialLoading .initial-loading-text { color:#7f8c8d; font-size:.92em; line-height:1.45; }
+        #initialLoading .spinner { width:46px; height:46px; margin:0 auto 18px; border-width:5px; }
+        #initialLoading.error .spinner { display:none; }
+        #initialLoading.error .initial-loading-box { border-color:#f3c4c4; }
+        #initialLoading.error .initial-loading-title { color:#c0392b; }
+        #initialLoading .initial-loading-action { margin-top:16px; }
     </style>
 <!-- Versión final: conexión Sheets robusta + diagnóstico + PDF con columnas parejas -->
 </head>
 <body>
+<div id="initialLoading">
+    <div class="initial-loading-box">
+        <div class="spinner"></div>
+        <div class="initial-loading-title" id="initialLoadingTitle">⏳ Por favor espere</div>
+        <div class="initial-loading-text" id="initialLoadingText">Cargando información del dashboard y conectando con Google Sheets...</div>
+        <div class="initial-loading-action" id="initialLoadingAction" style="display:none;">
+            <button class="btn btn-secondary" type="button" onclick="location.reload()">🔄 Reintentar</button>
+        </div>
+    </div>
+</div>
 <div class="container">
     <h1>📊 CONSOLIDADO DE CUMPLIMIENTOS</h1>
     <div class="subtitle">Sistema de Análisis de Proveedores - SAIEP · La Anónima</div>
@@ -406,6 +432,9 @@
         const text = await response.text();
 
         if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error('HTTP 404: la URL del Web App de Google Apps Script no existe o corresponde a una implementación anterior.');
+            }
             throw new Error(`HTTP ${response.status}: ${text.substring(0, 250)}`);
         }
 
@@ -809,16 +838,52 @@
         return `${anio}-${mes}`;
     }
 
+    function mostrarCargaInicial(titulo = '⏳ Por favor espere', texto = 'Cargando información del dashboard y conectando con Google Sheets...') {
+        const overlay = document.getElementById('initialLoading');
+        if (!overlay) return;
+        overlay.classList.remove('error');
+        document.getElementById('initialLoadingTitle').textContent = titulo;
+        document.getElementById('initialLoadingText').textContent = texto;
+        document.getElementById('initialLoadingAction').style.display = 'none';
+        overlay.style.display = 'flex';
+    }
+
+    function ocultarCargaInicial() {
+        const overlay = document.getElementById('initialLoading');
+        if (overlay) overlay.style.display = 'none';
+    }
+
+    function mostrarErrorCargaInicial(error) {
+        const overlay = document.getElementById('initialLoading');
+        if (!overlay) return;
+        overlay.classList.add('error');
+        document.getElementById('initialLoadingTitle').textContent = '⚠️ No se pudieron cargar los datos';
+        document.getElementById('initialLoadingText').textContent = error || 'No fue posible conectar con Google Sheets.';
+        document.getElementById('initialLoadingAction').style.display = 'block';
+        overlay.style.display = 'flex';
+    }
+
     // ════════════════════════════════════════════════════
     // INIT
     // ════════════════════════════════════════════════════
     document.addEventListener('DOMContentLoaded', async function() {
+        mostrarCargaInicial();
         document.getElementById('monthInput').value = getMesActual();
-        await cargarConfigZonas();
-        await cargarConfigRA();
-        await cargarDatosGoogleSheets();
-        generarTabla();
-        mostrarDashboard();
+
+        try {
+            await cargarConfigZonas();
+            await cargarConfigRA();
+            const ok = await cargarDatosGoogleSheets(true);
+            generarTabla();
+            mostrarDashboard();
+
+            if (ok) {
+                ocultarCargaInicial();
+            }
+        } catch (e) {
+            console.error('❌ Error durante la carga inicial:', e);
+            mostrarErrorCargaInicial(e.message);
+        }
     });
 
     document.getElementById('pdfInput').addEventListener('change', function(e) {
@@ -830,9 +895,11 @@
     });
 
     document.getElementById('monthInput').addEventListener('change', async function() {
-        await cargarDatosGoogleSheets();
+        mostrarCargaInicial('⏳ Cargando período', 'Consultando Google Sheets para el mes seleccionado...');
+        const ok = await cargarDatosGoogleSheets(true);
         generarTabla();
         mostrarDashboard();
+        if (ok) ocultarCargaInicial();
     });
 
     document.getElementById('zoneSelector').addEventListener('change', function() {
@@ -1102,7 +1169,7 @@
         }
     }
 
-    async function cargarDatosGoogleSheets() {
+    async function cargarDatosGoogleSheets(esCargaInicial = false) {
         try {
             const mes = document.getElementById('monthInput').value;
             const datos = await fetchJSON(`${GOOGLE_SHEETS_URL}?mes=${encodeURIComponent(mes)}&_=${Date.now()}`);
@@ -1143,11 +1210,20 @@
             return true;
         } catch (error) {
             console.error('❌ Error cargando datos:', error);
-            alert('⚠️ Error de conexión: ' + error.message);
 
             SUCURSALES_SISTEMA.forEach(suc => {
                 if (!datosConsolidados[suc]) datosConsolidados[suc] = {};
             });
+
+            if (esCargaInicial) {
+                mostrarErrorCargaInicial(
+                    'Google Sheets respondió con un error. ' +
+                    error.message +
+                    ' Verificá que la URL /exec configurada en el HTML corresponda a la implementación vigente del Web App.'
+                );
+            } else {
+                alert('⚠️ No se pudieron cargar los datos del período.\n\n' + error.message);
+            }
 
             return false;
         }
