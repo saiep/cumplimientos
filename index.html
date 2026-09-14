@@ -2317,7 +2317,9 @@
 
         const labels = PROVEEDORES;
         const values = labels.map(p => r.promProveedor[p] ?? 0);
-        const ctxP = document.getElementById('dashboardProviderChart').getContext('2d');
+        const canvasP = document.getElementById('dashboardProviderChart');
+        if (!canvasP) { console.warn('⚠️ No se encontró el gráfico de proveedores.'); return; }
+        const ctxP = canvasP.getContext('2d');
         if (dashboardProviderChart) dashboardProviderChart.destroy();
         dashboardProviderChart = new Chart(ctxP, {
             type:'bar',
@@ -2325,14 +2327,13 @@
             options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+'%'}}},scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}}}
         });
 
-        const branchRows = Object.entries(r.porSucursal).filter(([,v]) => v !== null).sort((a,b)=>b[1]-a[1]);
-        const ctxB = document.getElementById('dashboardBranchChart').getContext('2d');
-        if (dashboardBranchChart) dashboardBranchChart.destroy();
-        dashboardBranchChart = new Chart(ctxB, {
-            type:'bar',
-            data:{labels:branchRows.map(x=>x[0]),datasets:[{label:'Cumplimiento',data:branchRows.map(x=>x[1]),backgroundColor:'#667eea',borderRadius:5}]},
-            options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.x+'%'}}},scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}},y:{ticks:{font:{size:10}}}}}
-        });
+        // El ranking de sucursales se muestra mediante el ranking por cobertura.
+        // No se genera un segundo gráfico tradicional por sucursal para evitar
+        // duplicar una clasificación que no contempla la cantidad de proveedores evaluados.
+        if (dashboardBranchChart) {
+            dashboardBranchChart.destroy();
+            dashboardBranchChart = null;
+        }
 
         renderRankingCobertura();
 
@@ -2406,7 +2407,9 @@
                 return vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
             });
 
-            const ctx = document.getElementById('dashboardTrendChart').getContext('2d');
+            const canvasTrend = document.getElementById('dashboardTrendChart');
+            if (!canvasTrend) { console.warn('⚠️ No se encontró el gráfico histórico.'); return; }
+            const ctx = canvasTrend.getContext('2d');
             if (dashboardTrendChart) dashboardTrendChart.destroy();
             const labels = meses.map(x => {
                 const [a,m] = x.split('-');
