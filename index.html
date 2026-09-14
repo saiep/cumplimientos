@@ -35,7 +35,34 @@
         .btn-warning:hover { background: #f57c00; }
         .btn-ra { background: linear-gradient(135deg, #1565c0, #1976d2); color: white; }
         .btn-ra:hover { background: linear-gradient(135deg, #0d47a1, #1565c0); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(21,101,192,0.3); }
-        .actions { text-align: center; margin: 20px 0; }
+        /* Botones de descarga asociados al tipo de archivo */
+    .btn-download-file {
+        display:inline-flex !important;
+        align-items:center;
+        justify-content:center;
+        gap:10px;
+        min-height:44px;
+        font-weight:700;
+    }
+    .file-icon {
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        width:34px;
+        height:28px;
+        border-radius:5px;
+        color:#fff;
+        font-size:11px;
+        font-weight:800;
+        letter-spacing:.2px;
+        line-height:1;
+        box-shadow:0 2px 5px rgba(0,0,0,.15);
+    }
+    .file-icon-excel { background:#217346; }
+    .file-icon-pdf { background:#d32f2f; }
+    .download-label { line-height:1.1; }
+
+    .actions { text-align: center; margin: 20px 0; }
         .loading { text-align: center; padding: 20px; color: #7f8c8d; }
         .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -656,8 +683,12 @@
     </div>
 
     <div class="actions">
-        <button class="btn btn-secondary" onclick="exportarExcel()" id="btnExcel">📊 Descargar Excel</button>
-        <button class="btn btn-secondary" onclick="exportarPDF()" id="btnPDF">📄 Descargar PDF</button>
+        <button class="btn btn-secondary btn-download-file" onclick="exportarExcel()" id="btnExcel" title="Descargar archivo Excel">
+            <span class="file-icon file-icon-excel">XLSX</span><span class="download-label">Descargar Excel</span>
+        </button>
+        <button class="btn btn-secondary btn-download-file" onclick="exportarPDF()" id="btnPDF" title="Descargar archivo PDF">
+            <span class="file-icon file-icon-pdf">PDF</span><span class="download-label">Descargar PDF</span>
+        </button>
 
         <button class="btn btn-primary admin-only" onclick="procesarPDFs()">🚀 Procesar y Actualizar Tabla</button>
         <button class="btn btn-ra admin-only" onclick="abrirAdminRA()">🔵 Configurar RA (Admin)</button>
@@ -2060,13 +2091,13 @@
         if (!btnExcel || !btnPDF) return;
 
         if (vistaActual === 'dashboard') {
-            btnExcel.textContent = '📊 Descargar Dashboard';
-            btnPDF.textContent = '📄 Descargar Dashboard';
+            btnExcel.innerHTML = '<span class="file-icon file-icon-excel">XLSX</span><span class="download-label">Descargar Dashboard</span>';
+            btnPDF.innerHTML = '<span class="file-icon file-icon-pdf">PDF</span><span class="download-label">Descargar Dashboard</span>';
             btnExcel.title = 'Descargar el resumen del Dashboard seleccionado';
             btnPDF.title = 'Descargar el Dashboard tal como se visualiza';
         } else {
-            btnExcel.textContent = '📊 Descargar Tabla';
-            btnPDF.textContent = '📄 Descargar Tabla';
+            btnExcel.innerHTML = '<span class="file-icon file-icon-excel">XLSX</span><span class="download-label">Descargar Tabla</span>';
+            btnPDF.innerHTML = '<span class="file-icon file-icon-pdf">PDF</span><span class="download-label">Descargar Tabla</span>';
             btnExcel.title = 'Descargar la tabla detallada seleccionada';
             btnPDF.title = 'Descargar la tabla detallada seleccionada';
         }
@@ -2439,6 +2470,7 @@
                 { width: 18 }, { width: 18 }
             ];
 
+            ws.views = [{ state: 'frozen', ySplit: 4 }];
             ws.mergeCells('A1:F1');
             ws.getCell('A1').value = 'DASHBOARD DE CUMPLIMIENTO';
             ws.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
@@ -2449,12 +2481,16 @@
             ws.getCell('A2').value = `Período: ${document.getElementById('monthInput').value} | Zona: ${zonaSeleccionada}`;
             ws.getCell('A2').alignment = { horizontal: 'center' };
 
+            // IMPORTANTE: usar exactamente la estructura que devuelve
+            // resumenDashboardActual(). Evita valores undefined/NaN que
+            // pueden generar celdas inválidas y provocar que Excel repare
+            // la hoja al abrir el archivo.
             const kpis = [
-                ['Cumplimiento global', resumen.promedioGlobal / 100],
-                ['Pedidos', resumen.pedidos],
-                ['Sucursales', resumen.sucursales],
-                ['Proveedores', resumen.proveedores],
-                ['RA activas', resumen.raActivas]
+                ['Cumplimiento global', Number(resumen.promGlobal || 0) / 100],
+                ['Pedidos', Number(resumen.pedidos || 0)],
+                ['Sucursales', Array.isArray(resumen.sucursales) ? resumen.sucursales.length : 0],
+                ['Proveedores', PROVEEDORES.length],
+                ['RA activas', Number(resumen.ra || 0)]
             ];
 
             ws.getCell('A4').value = 'KPIs';
@@ -2477,11 +2513,20 @@
                 c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
             });
 
-            const proveedores = resumen.proveedoresDetalle || [];
+            const proveedores = PROVEEDORES.map(proveedor => ({
+                proveedor,
+                valor: resumen.promProveedor && resumen.promProveedor[proveedor] != null
+                    ? Number(resumen.promProveedor[proveedor])
+                    : null
+            }));
             proveedores.forEach((p, i) => {
                 ws.getCell(filaProv + 2 + i, 1).value = p.proveedor;
-                ws.getCell(filaProv + 2 + i, 2).value = p.valor / 100;
-                ws.getCell(filaProv + 2 + i, 2).numFmt = '0%';
+                if (p.valor !== null && Number.isFinite(p.valor)) {
+                    ws.getCell(filaProv + 2 + i, 2).value = p.valor / 100;
+                    ws.getCell(filaProv + 2 + i, 2).numFmt = '0%';
+                } else {
+                    ws.getCell(filaProv + 2 + i, 2).value = '-';
+                }
             });
 
             // Ranking de sucursales
@@ -2495,9 +2540,12 @@
                 c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
             });
 
-            (resumen.ranking || []).forEach((r, i) => {
-                ws.getCell(filaRanking + 2 + i, 1).value = r.sucursal;
-                ws.getCell(filaRanking + 2 + i, 2).value = r.valor / 100;
+            const ranking = Object.entries(resumen.porSucursal || {})
+                .filter(([, valor]) => valor !== null && valor !== undefined && Number.isFinite(Number(valor)))
+                .sort((a, b) => Number(b[1]) - Number(a[1]));
+            ranking.forEach(([sucursal, valor], i) => {
+                ws.getCell(filaRanking + 2 + i, 1).value = sucursal;
+                ws.getCell(filaRanking + 2 + i, 2).value = Number(valor) / 100;
                 ws.getCell(filaRanking + 2 + i, 2).numFmt = '0%';
             });
 
@@ -2530,8 +2578,8 @@
                         celda.value = 'N/R';
                     } else if (esRA) {
                         celda.value = 'RA';
-                    } else if (valor !== null) {
-                        celda.value = valor / 100;
+                    } else if (valor !== null && Number.isFinite(Number(valor))) {
+                        celda.value = Number(valor) / 100;
                         celda.numFmt = '0%';
                     } else {
                         celda.value = '-';
