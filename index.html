@@ -1,4 +1,6 @@
-
+<!DOCTYPE html>
+<html lang="es">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Consolidado SAIEP - La Anónima</title>
@@ -424,7 +426,7 @@
 
     const SUCURSALES_NO_DISPONIBLE = { '254': ['CCU','DANONE','MASTELLONE'] };
 
-    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwnHKu6_5868rhYX2k5zTRg8LyqVgI2ADPeF1RVyB5pz9iJN9ATZg5z7wPdYy3BG7tgmg/exec';
+    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycby4ZY8nhH-cGUafK52dOhEeLhUFrM-ZxnOyz5SLQfhbuHfYT8DIgHfTV9-4eBnre9PAmw/exec';
 
     // ── Conexión robusta con Google Apps Script ──
     async function fetchJSON(url, options = {}) {
@@ -540,8 +542,26 @@
         try {
             const datos = await fetchJSON(`${GOOGLE_SHEETS_URL}?action=get_zonas_config&_=${Date.now()}`);
 
-            if (datos && typeof datos === 'object' && !Array.isArray(datos) && !datos.error && Object.keys(datos).length) {
-                const configuradas = normalizarZonas(datos);
+            if (datos && !datos.error) {
+                let configuradas = {};
+
+                // Formato actual del Apps Script:
+                // [{Zona:'NEUQUEN INTERIOR', Sucursales:['050','076',...]}]
+                if (Array.isArray(datos)) {
+                    datos.forEach(function(item) {
+                        if (!item) return;
+                        const nombre = String(item.Zona || item.zona || '').trim().toUpperCase();
+                        const lista = item.Sucursales || item.sucursales || [];
+                        const sucursales = normalizarListaSucursales(
+                            Array.isArray(lista) ? lista.join(',') : lista
+                        );
+                        if (nombre && sucursales.length) configuradas[nombre] = sucursales;
+                    });
+                } else if (typeof datos === 'object') {
+                    // Compatibilidad con configuraciones antiguas tipo {ZONA:[...]}
+                    configuradas = normalizarZonas(datos);
+                }
+
                 if (Object.keys(configuradas).length) ZONAS = configuradas;
             }
         } catch (e) {
@@ -641,7 +661,17 @@
         try {
             const fd = new URLSearchParams();
             fd.append('action', 'save_zonas_config');
-            fd.append('data', JSON.stringify(nuevaConfig));
+
+            // El Apps Script recibe un array de objetos:
+            // [{Zona:'...', Sucursales:['050','076',...]}]
+            const payloadZonas = Object.entries(nuevaConfig).map(function([zona, sucursales]) {
+                return {
+                    Zona: zona,
+                    Sucursales: sucursales
+                };
+            });
+
+            fd.append('data', JSON.stringify(payloadZonas));
 
             const result = await fetchJSON(GOOGLE_SHEETS_URL, { method: 'POST', body: fd });
 
