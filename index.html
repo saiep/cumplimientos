@@ -651,6 +651,27 @@
         @media (max-width:900px){ .coverage-ranking{grid-template-columns:repeat(2,minmax(0,1fr));} }
         @media (max-width:600px){ .coverage-ranking{grid-template-columns:1fr;} .coverage-row{grid-template-columns:38px 1fr 52px;} }
 
+
+        .coverage-analysis-panel { min-height: 100%; }
+        .coverage-analysis { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+        .coverage-analysis-cards { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+        .coverage-analysis-card { border:1px solid #e6eaf0; border-radius:10px; padding:11px; background:#fff; }
+        .coverage-analysis-card.high { border-left:4px solid #27ae60; }
+        .coverage-analysis-card.low { border-left:4px solid #f39c12; }
+        .coverage-analysis-card .ca-title { font-weight:800; font-size:.84em; color:#2c3e50; }
+        .coverage-analysis-card .ca-main { font-size:1.45em; font-weight:900; margin-top:4px; color:#243447; }
+        .coverage-analysis-card .ca-detail { font-size:.72em; color:#7f8c8d; margin-top:3px; }
+        .coverage-distribution { border-top:1px solid #edf0f4; padding-top:10px; }
+        .coverage-distribution-title { font-size:.76em; font-weight:800; color:#5f6b78; margin-bottom:7px; }
+        .coverage-bar-row { display:grid; grid-template-columns:125px 1fr 40px; align-items:center; gap:7px; font-size:.72em; margin:6px 0; }
+        .coverage-bar-track { height:8px; border-radius:10px; background:#edf0f4; overflow:hidden; }
+        .coverage-bar-fill { height:100%; border-radius:10px; }
+        .coverage-bar-fill.high { background:#27ae60; }
+        .coverage-bar-fill.low { background:#f39c12; }
+        .coverage-insight { padding:10px 11px; border-radius:9px; background:#f7f9fb; font-size:.75em; line-height:1.45; color:#596573; }
+        .coverage-insight strong { color:#263746; }
+        @media (max-width:900px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} }
+        @media (max-width:600px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} .coverage-bar-row{grid-template-columns:105px 1fr 38px;} }
 </style>
 <!-- Versión final: conexión Sheets robusta + diagnóstico + PDF con columnas parejas -->
 </head>
@@ -772,6 +793,11 @@
                 <h3>🏆 Cumplimiento por proveedor</h3>
                 <div class="sub">Promedio del período y zona seleccionados</div>
                 <div class="dash-chart-wrap"><canvas id="dashboardProviderChart"></canvas></div>
+            </div>
+            <div class="dash-panel coverage-analysis-panel">
+                <h3>📊 Análisis de cobertura y desempeño</h3>
+                <div class="sub">La lectura del cumplimiento considera también la cantidad de proveedores evaluados.</div>
+                <div id="coverageAnalysis"></div>
             </div>
             <div class="dash-panel full">
                 <h3>🏆 Ranking de sucursales por cobertura</h3>
@@ -2302,6 +2328,67 @@
         }).join('');
     }
 
+    function renderAnalisisCobertura(r) {
+        const cont = document.getElementById('coverageAnalysis');
+        if (!cont) return;
+        const sucursales = r.sucursales || [];
+        const total = sucursales.length;
+        const totalProv = PROVEEDORES.length || 1;
+        let altos = [], bajos = [];
+        sucursales.forEach(s => {
+            let evaluados = 0, suma = 0;
+            PROVEEDORES.forEach(p => {
+                const esND = SUCURSALES_NO_DISPONIBLE[s]?.includes(p);
+                const esRA = (SUCURSALES_RA[p] || []).includes(s);
+                if (esND || esRA) return;
+                const c = cumplimientoDeDato(datosConsolidados[s]?.[p]);
+                if (c !== null && Number.isFinite(Number(c))) { evaluados++; suma += Number(c); }
+            });
+            if (!evaluados) return;
+            const item = {s, evaluados, cumplimiento: Math.round(suma/evaluados)};
+            (evaluados >= 4 ? altos : bajos).push(item);
+        });
+        const promedio = arr => arr.length ? Math.round(arr.reduce((a,x)=>a+x.cumplimiento,0)/arr.length) : null;
+        const pAltos = promedio(altos), pBajos = promedio(bajos);
+        const nAltos = altos.length, nBajos = bajos.length;
+        const pctAltos = total ? Math.round(nAltos/total*100) : 0;
+        const pctBajos = total ? Math.round(nBajos/total*100) : 0;
+        const raTotal = PROVEEDORES.reduce((n,p)=>n + (SUCURSALES_RA[p] || []).filter(s=>sucursales.includes(s)).length,0);
+        const posibles = total * totalProv;
+        const coberturaReal = posibles ? Math.round(((altos.reduce((n,x)=>n+x.evaluados,0)+bajos.reduce((n,x)=>n+x.evaluados,0))/posibles)*100) : 0;
+        let insight = 'La cobertura permite contextualizar el porcentaje de cumplimiento antes de comparar sucursales.';
+        if (pAltos !== null && pBajos !== null) {
+            if (pBajos > pAltos) insight = `Las sucursales de <strong>cobertura baja</strong> promedian ${pBajos}%, por encima del ${pAltos}% de las de cobertura alta. Conviene interpretar ese resultado junto con la cantidad de proveedores evaluados.`;
+            else if (pAltos > pBajos) insight = `Las sucursales de <strong>cobertura alta</strong> promedian ${pAltos}%, superando el ${pBajos}% del grupo de cobertura baja. El resultado es más consistente al estar respaldado por una mayor cantidad de proveedores.`;
+            else insight = `Ambos grupos promedian <strong>${pAltos}%</strong>. La diferencia principal está en la amplitud de cobertura de proveedores.`;
+        }
+        cont.innerHTML = `
+            <div class="coverage-analysis">
+                <div class="coverage-analysis-cards">
+                    <div class="coverage-analysis-card high">
+                        <div class="ca-title">🟢 4 a 6 proveedores</div>
+                        <div class="ca-main">${nAltos} suc. · ${pAltos ?? '-'}%</div>
+                        <div class="ca-detail">${pctAltos}% de las sucursales · cumplimiento promedio</div>
+                    </div>
+                    <div class="coverage-analysis-card low">
+                        <div class="ca-title">🟠 1 a 3 proveedores</div>
+                        <div class="ca-main">${nBajos} suc. · ${pBajos ?? '-'}%</div>
+                        <div class="ca-detail">${pctBajos}% de las sucursales · cumplimiento promedio</div>
+                    </div>
+                </div>
+                <div class="coverage-distribution">
+                    <div class="coverage-distribution-title">Distribución de sucursales</div>
+                    <div class="coverage-bar-row"><span>🟢 Cobertura alta</span><div class="coverage-bar-track"><div class="coverage-bar-fill high" style="width:${pctAltos}%"></div></div><strong>${pctAltos}%</strong></div>
+                    <div class="coverage-bar-row"><span>🟠 Cobertura baja</span><div class="coverage-bar-track"><div class="coverage-bar-fill low" style="width:${pctBajos}%"></div></div><strong>${pctBajos}%</strong></div>
+                </div>
+                <div class="coverage-analysis-card" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <div><div class="ca-title">📦 Cobertura promedio</div><div class="ca-main">${coberturaReal}%</div></div>
+                    <div><div class="ca-title">🔵 RA activas</div><div class="ca-main">${raTotal}</div></div>
+                </div>
+                <div class="coverage-insight"><strong>💡 Lectura:</strong> ${insight}</div>
+            </div>`;
+    }
+
     function actualizarDashboardActual() {
         const r = resumenDashboardActual();
         const mes = document.getElementById('monthInput').value || getMesActual();
@@ -2314,6 +2401,7 @@
         document.getElementById('dashKpiSucursales').textContent = r.sucursales.length;
         document.getElementById('dashKpiProveedores').textContent = PROVEEDORES.length;
         document.getElementById('dashKpiRA').textContent = r.ra;
+        renderAnalisisCobertura(r);
 
         const labels = PROVEEDORES;
         const values = labels.map(p => r.promProveedor[p] ?? 0);
