@@ -179,6 +179,437 @@
         #initialLoading.error .initial-loading-box { border-color:#f3c4c4; }
         #initialLoading.error .initial-loading-title { color:#c0392b; }
         #initialLoading .initial-loading-action { margin-top:16px; }
+
+        /* =========================================================
+           RESPONSIVE PREMIUM - CELULAR / TABLET
+           Mantiene el diseño desktop y adapta el dashboard al móvil.
+        ========================================================= */
+
+        html, body { width: 100%; overflow-x: hidden; }
+
+        @media (max-width: 900px) {
+            body { padding: 12px; }
+            .container { padding: 20px; border-radius: 12px; }
+
+            h1 { font-size: 1.8em; }
+            .subtitle { font-size: 1em; margin-bottom: 20px; }
+
+            .content-with-ra-panel {
+                flex-direction: column;
+            }
+
+            #raPanel {
+                width: 100%;
+                position: static;
+                max-height: none;
+                order: 0;
+            }
+
+            .content-with-ra-panel .table-container {
+                width: 100%;
+                order: 1;
+            }
+
+            .month-selector {
+                padding: 16px;
+            }
+
+            .month-selector input,
+            .month-selector select {
+                margin: 6px 0;
+                width: 100%;
+                max-width: 100%;
+            }
+
+            .month-selector label {
+                display: block;
+                margin: 0 0 5px;
+            }
+
+            #zoneSelector {
+                min-width: 0 !important;
+            }
+
+            .actions {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+            }
+
+            .actions .btn {
+                width: 100%;
+                margin: 0;
+                padding: 11px 8px;
+                font-size: .9em;
+            }
+
+            .stats {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+            }
+
+            .stat-card {
+                padding: 14px 8px;
+            }
+
+            .stat-value {
+                font-size: 1.8em;
+            }
+
+            .stat-label {
+                font-size: .75em;
+            }
+
+            .dash-kpis {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+
+            .dash-kpi {
+                padding: 13px;
+            }
+
+            .dash-kpi .value {
+                font-size: 1.55em;
+            }
+
+            .dash-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .dash-panel,
+            .dash-panel.full {
+                grid-column: auto;
+                padding: 14px;
+            }
+
+            .dash-chart-wrap {
+                height: 270px;
+            }
+
+            .heatmap-wrap {
+                margin: 0 -4px;
+            }
+
+            .heatmap {
+                min-width: 680px;
+            }
+
+            .view-switch {
+                position: sticky;
+                top: 0;
+                z-index: 50;
+                background: rgba(255,255,255,.96);
+                padding: 8px 0;
+                margin-bottom: 10px;
+                backdrop-filter: blur(8px);
+            }
+
+            .view-switch button {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .modal-box {
+                width: calc(100% - 20px);
+                max-height: 92vh;
+                padding: 20px;
+            }
+
+            .ra-config-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 6px;
+                background: #f3f5fa;
+            }
+
+            .container {
+                padding: 12px;
+                border-radius: 10px;
+                box-shadow: 0 8px 25px rgba(0,0,0,.12);
+            }
+
+            h1 {
+                font-size: 1.35em;
+                line-height: 1.2;
+                margin-bottom: 5px;
+            }
+
+            .subtitle {
+                font-size: .78em;
+                margin-bottom: 14px;
+            }
+
+            .month-selector {
+                margin: 10px 0 !important;
+                padding: 12px;
+                border-radius: 9px;
+            }
+
+            .month-selector p {
+                font-size: .76em !important;
+            }
+
+            .month-selector input,
+            .month-selector select {
+                font-size: 1em;
+                padding: 11px 10px;
+                border-width: 1.5px;
+            }
+
+            .actions {
+                grid-template-columns: 1fr 1fr;
+                gap: 7px;
+                margin: 12px 0;
+            }
+
+            .actions .btn {
+                min-height: 44px;
+                font-size: .78em;
+                border-radius: 8px;
+            }
+
+            .admin-access {
+                text-align: center;
+                margin: 8px 0 10px;
+            }
+
+            .stats {
+                grid-template-columns: 1fr;
+                gap: 8px;
+                margin-top: 15px;
+            }
+
+            .stat-card {
+                padding: 11px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                text-align: left;
+            }
+
+            .stat-value {
+                font-size: 1.45em;
+                margin: 0;
+            }
+
+            .stat-label {
+                font-size: .78em;
+            }
+
+            #proveedoresCards {
+                gap: 8px !important;
+            }
+
+            #proveedoresCards > * {
+                max-width: 100% !important;
+            }
+
+            #statsContainer > div > div[style*="box-shadow"] {
+                padding: 10px !important;
+                gap: 10px !important;
+            }
+
+            .dashboard-head {
+                gap: 8px;
+                margin-bottom: 12px;
+            }
+
+            .dashboard-head h2 {
+                font-size: 1.25em;
+            }
+
+            .dashboard-head p {
+                font-size: .76em;
+            }
+
+            .dash-kpis {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+
+            .dash-kpi {
+                padding: 11px;
+                border-radius: 9px;
+            }
+
+            .dash-kpi .label {
+                font-size: .65em;
+                line-height: 1.2;
+            }
+
+            .dash-kpi .value {
+                font-size: 1.35em;
+                margin-top: 5px;
+            }
+
+            .dash-panel {
+                padding: 11px;
+                border-radius: 9px;
+            }
+
+            .dash-panel h3 {
+                font-size: .9em;
+            }
+
+            .dash-panel .sub {
+                font-size: .7em;
+            }
+
+            .dash-chart-wrap {
+                height: 235px;
+            }
+
+            .heatmap {
+                min-width: 650px;
+            }
+
+            .heatmap th {
+                font-size: .68em;
+                padding: 8px 5px;
+            }
+
+            .heatmap td {
+                font-size: .7em;
+                min-width: 70px;
+                padding: 8px 4px;
+            }
+
+            /* Tabla: mantiene todas las columnas sin deformarlas */
+            .table-container {
+                width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                border-radius: 8px;
+            }
+
+            #tablaConsolidado {
+                min-width: 650px;
+            }
+
+            #tablaConsolidado th {
+                padding: 10px 7px;
+                font-size: .72em;
+            }
+
+            #tablaConsolidado td {
+                padding: 9px 7px;
+                font-size: .75em;
+            }
+
+            #raPanel {
+                padding: 11px;
+                border-radius: 9px;
+            }
+
+            #raPanel h3 {
+                font-size: .82em;
+            }
+
+            .ra-proveedor-block {
+                margin-bottom: 9px;
+            }
+
+            .ra-proveedor-titulo,
+            .ra-suc-pill,
+            .ra-empty {
+                font-size: .68em;
+            }
+
+            .file-input-label {
+                padding: 14px 10px;
+                font-size: .9em;
+            }
+
+            .modal-box {
+                width: calc(100% - 12px);
+                padding: 15px;
+                border-radius: 12px;
+            }
+
+            .modal-box h2 {
+                font-size: 1.15em;
+            }
+
+            .modal-subtitle {
+                font-size: .78em;
+                line-height: 1.4;
+            }
+
+            .modal-actions {
+                flex-direction: column-reverse;
+            }
+
+            .modal-actions .btn {
+                width: 100%;
+                margin: 0;
+            }
+
+            #zonasConfigGrid > div {
+                grid-template-columns: 1fr !important;
+            }
+
+            #nuevaZonaNombre,
+            #nuevaZonaSucursales {
+                min-width: 0 !important;
+                width: 100%;
+            }
+
+            #initialLoading .initial-loading-box {
+                width: calc(100% - 24px);
+                padding: 24px 18px;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .container { padding: 9px; }
+
+            h1 { font-size: 1.18em; }
+
+            .actions .btn {
+                font-size: .72em;
+                padding-left: 5px;
+                padding-right: 5px;
+            }
+
+            .dash-kpi .value {
+                font-size: 1.18em;
+            }
+
+            .dash-chart-wrap {
+                height: 215px;
+            }
+
+            .view-switch button {
+                padding: 9px 7px;
+                font-size: .78em;
+            }
+        }
+
+        /* Mejora táctil */
+        @media (hover: none) and (pointer: coarse) {
+            button, select, input, label {
+                -webkit-tap-highlight-color: transparent;
+            }
+
+            button,
+            .btn,
+            .view-switch button {
+                min-height: 42px;
+            }
+
+            select,
+            input[type="month"],
+            input[type="text"] {
+                min-height: 44px;
+            }
+        }
+
     </style>
 <!-- Versión final: conexión Sheets robusta + diagnóstico + PDF con columnas parejas -->
 </head>
