@@ -426,7 +426,8 @@
 
     const SUCURSALES_NO_DISPONIBLE = { '254': ['CCU','DANONE','MASTELLONE'] };
 
-    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxO7FaAqkuSqHnLnu3Q3aJ-Uz1i-Tt5D1MZq5W3zu9JV-VtDT8REdERYL-6GX3iqa-mSw/exec';
+    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycby4ZY8nhH-cGUafK52dOhEeLhUFrM-ZxnOyz5SLQfhbuHfYT8DIgHfTV9-4eBnre9PAmw/exec';
+    let DASHBOARD_DATA_CACHE = null;
 
     // ── Conexión robusta con Google Apps Script ──
     async function fetchJSON(url, options = {}) {
@@ -945,13 +946,9 @@
         document.getElementById('monthInput').value = getMesActual();
 
         try {
-            const resultados = await Promise.all([
-                cargarConfigZonas(),
-                cargarConfigRA(),
-                cargarDatosGoogleSheets(true)
-            ]);
-            const ok = resultados[2];
+            const ok = await cargarDatosGoogleSheets(true);
             generarTabla();
+            actualizarPanelRA();
             mostrarDashboard();
 
             if (ok) {
@@ -975,6 +972,7 @@
         mostrarCargaInicial('⏳ Cargando período', 'Consultando Google Sheets para el mes seleccionado...');
         const ok = await cargarDatosGoogleSheets(true);
         generarTabla();
+        actualizarPanelRA();
         mostrarDashboard();
         if (ok) ocultarCargaInicial();
     });
@@ -1246,44 +1244,94 @@
         }
     }
 
+    function aplicarPaqueteDashboard(paquete) {
+        if (!paquete || paquete.error || paquete.success === false) {
+            throw new Error(paquete?.error || 'Google Sheets devolvió un paquete inválido.');
+        }
+
+        DASHBOARD_DATA_CACHE = paquete;
+
+        // Zonas
+        if (Array.isArray(paquete.zonas) && paquete.zonas.length) {
+            const configuradas = {};
+            paquete.zonas.forEach(item => {
+                const nombre = String(item.Zona || '').trim().toUpperCase();
+                const lista = normalizarListaSucursales(item.Sucursales || '');
+                if (nombre && lista.length) configuradas[nombre] = lista;
+            });
+            if (Object.keys(configuradas).length) ZONAS = configuradas;
+        }
+        reconstruirCatalogoSucursales();
+        actualizarSelectorZonas();
+        zonaSeleccionada = document.getElementById('zoneSelector').value || zonaSeleccionada;
+
+        // RA
+        PROVEEDORES.forEach(p => { SUCURSALES_RA[p] = []; });
+        if (Array.isArray(paquete.ra)) {
+            paquete.ra.forEach(row => {
+                const prov = String(row.Proveedor || '').trim();
+                const suc = String(row.Sucursal || '').padStart(3, '0');
+                if (PROVEEDORES.includes(prov) && !SUCURSALES_RA[prov].includes(suc)) {
+                    SUCURSALES_RA[prov].push(suc);
+                }
+            });
+        }
+        console.log('✅ Paquete dashboard cargado:', Object.keys(paquete.meses || {}).length, 'meses');
+        console.log('✅ Config RA:', SUCURSALES_RA);
+    }
+
+    function aplicarMesDesdeCache(mes) {
+        const info = DASHBOARD_DATA_CACHE?.meses?.[mes];
+        if (!info) return false;
+
+        datosConsolidados = {};
+        ordenesProceadas = {};
+        SUCURSALES_SISTEMA.forEach(suc => { datosConsolidados[suc] = {}; });
+
+        const cells = info.cells || {};
+        Object.keys(cells).forEach(clave => {
+            const [sucursal, proveedor] = clave.split('|');
+            const cumplimiento = Number(cells[clave]);
+            if (!SUCURSALES_SISTEMA.includes(sucursal) || !PROVEEDORES.includes(proveedor) || !Number.isFinite(cumplimiento)) return;
+            datosConsolidados[sucursal][proveedor] = {
+                pedidoTotal: 100,
+                recibidoTotal: Math.round(cumplimiento)
+            };
+        });
+
+        const orders = info.orders || {};
+        Object.keys(orders).forEach(clave => {
+            const [sucursal, proveedor] = clave.split('|');
+            const cantidad = Number(orders[clave]) || 0;
+            if (!cantidad) return;
+            const key = `${sucursal}-${proveedor}`;
+            ordenesProceadas[key] = new Set(Array.from({length: cantidad}, (_, i) => String(i + 1)));
+        });
+        return true;
+    }
+
+    async function cargarPaqueteDashboard(mes) {
+        const datos = await jsonpGet(
+            `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mes)}`,
+            45000
+        );
+        aplicarPaqueteDashboard(datos);
+        return datos;
+    }
+
     async function cargarDatosGoogleSheets(esCargaInicial = false) {
         try {
-            const mes = document.getElementById('monthInput').value;
-            const datos = await jsonpGet(`${GOOGLE_SHEETS_URL}?mes=${encodeURIComponent(mes)}`);
+            const mes = document.getElementById('monthInput').value || getMesActual();
 
-            if (datos.error) {
-                alert('⚠️ Error al cargar datos: ' + datos.error);
+            if (!DASHBOARD_DATA_CACHE?.meses?.[mes]) {
+                await cargarPaqueteDashboard(mes);
             }
 
-            datosConsolidados = {};
-            ordenesProceadas = {};
-
-            SUCURSALES_SISTEMA.forEach(suc => {
-                datosConsolidados[suc] = {};
-            });
-
-            if (Array.isArray(datos)) {
-                datos.forEach(fila => {
-                    const sucursal = String(fila.Sucursal).padStart(3, '0');
-                    const proveedor = fila.Proveedor;
-                    const cumplimiento = fila.Cumplimiento;
-                    const orden = fila.Orden;
-
-                    if (orden) {
-                        const clave = `${sucursal}-${proveedor}`;
-                        if (!ordenesProceadas[clave]) ordenesProceadas[clave] = new Set();
-                        ordenesProceadas[clave].add(String(orden));
-                    }
-
-                    if (cumplimiento !== 'RA' && cumplimiento !== 'N/R' && typeof cumplimiento === 'number') {
-                        datosConsolidados[sucursal][proveedor] = {
-                            pedidoTotal: 100,
-                            recibidoTotal: Math.round(100 * cumplimiento / 100)
-                        };
-                    }
-                });
+            if (!aplicarMesDesdeCache(mes)) {
+                throw new Error(`El período ${mes} no está disponible en el paquete recibido.`);
             }
 
+            actualizarPanelRA();
             return true;
         } catch (error) {
             console.error('❌ Error cargando datos:', error);
@@ -1723,23 +1771,30 @@
         const loader = document.getElementById('dashboardLoading');
         loader.style.display = 'block';
         try {
+            if (!DASHBOARD_DATA_CACHE) return;
             const meses = mesesHistoricoDashboard();
-            const consulta = encodeURIComponent(meses.join(','));
-            const respuesta = await jsonpGet(`${GOOGLE_SHEETS_URL}?action=get_historico&meses=${consulta}`, 30000);
-            const mapaMeses = (respuesta && respuesta.data) ? respuesta.data : {};
-
-            const respuestas = meses.map(mes => ({
-                mes,
-                filas: Array.isArray(mapaMeses[mes]) ? mapaMeses[mes] : []
-            }));
+            const sucursales = obtenerSucursalesZonaDashboard();
+            const values = meses.map(mes => {
+                const info = DASHBOARD_DATA_CACHE.meses?.[mes];
+                if (!info) return null;
+                const vals = [];
+                Object.entries(info.cells || {}).forEach(([clave, valor]) => {
+                    const [suc, prov] = clave.split('|');
+                    if (!sucursales.includes(suc) || !PROVEEDORES.includes(prov)) return;
+                    const esND = SUCURSALES_NO_DISPONIBLE[suc]?.includes(prov);
+                    const esRA = (SUCURSALES_RA[prov] || []).includes(suc);
+                    const c = Number(valor);
+                    if (!esND && !esRA && Number.isFinite(c)) vals.push(c);
+                });
+                return vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
+            });
 
             const ctx = document.getElementById('dashboardTrendChart').getContext('2d');
             if (dashboardTrendChart) dashboardTrendChart.destroy();
-            const labels = respuestas.map(x => {
-                const [a,m] = x.mes.split('-');
+            const labels = meses.map(x => {
+                const [a,m] = x.split('-');
                 return ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(m)-1] + ' ' + a.slice(2);
             });
-            const values = respuestas.map(x => promedioHistoricoFilas(x.filas));
             dashboardTrendChart = new Chart(ctx, {
                 type:'line',
                 data:{labels,datasets:[{label:'Cumplimiento global',data:values,borderColor:'#667eea',backgroundColor:'rgba(102,126,234,.12)',fill:true,tension:.3,spanGaps:false,pointRadius:4}]},
