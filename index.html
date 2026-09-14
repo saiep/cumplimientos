@@ -773,16 +773,11 @@
                 <div class="sub">Promedio del período y zona seleccionados</div>
                 <div class="dash-chart-wrap"><canvas id="dashboardProviderChart"></canvas></div>
             </div>
-            <div class="dash-panel">
-                <h3>🏪 Ranking de sucursales</h3>
-                <div class="sub">Mejor y peor desempeño del período</div>
-                <div class="dash-chart-wrap"><canvas id="dashboardBranchChart"></canvas></div>
-            </div>
             <div class="dash-panel full">
-                <h3>🏆 Ranking por cobertura de proveedores</h3>
-                <div class="sub">Las sucursales se comparan dentro de grupos según la cantidad de proveedores efectivamente evaluados.</div>
+                <h3>🏆 Ranking de sucursales por cobertura</h3>
+                <div class="sub">Las sucursales se comparan dentro de su grupo según la cantidad de proveedores efectivamente evaluados.</div>
                 <div id="coverageRanking" class="coverage-ranking"></div>
-                <div class="coverage-note">Índice integral = 70% cumplimiento + 30% cobertura. RA y N/R no se consideran proveedores evaluados.</div>
+                <div class="coverage-note">Dentro de cada grupo, el orden se determina por % de cumplimiento. RA y N/R no se consideran proveedores evaluados.</div>
             </div>
             <div class="dash-panel full">
                 <h3>📈 Evolución mensual</h3>
@@ -2282,7 +2277,11 @@
             const cobertura = Math.round((evaluados / totalProveedores) * 100);
             const indice = cumplimiento === null ? null : Math.round(cumplimiento * 0.70 + cobertura * 0.30);
             return { sucursal:s, evaluados, cobertura, cumplimiento, indice };
-        }).filter(x => x.cumplimiento !== null).sort((a,b) => (b.indice-a.indice) || (b.cumplimiento-a.cumplimiento));
+        }).filter(x => x.cumplimiento !== null).sort((a,b) => {
+            const ga = a.evaluados >= 4 ? 0 : 1;
+            const gb = b.evaluados >= 4 ? 0 : 1;
+            return (ga-gb) || (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal);
+        });
     }
 
     function renderRankingCobertura() {
@@ -2296,10 +2295,10 @@
         cont.innerHTML = grupos.map(g => {
             const rows = ranking
                 .filter(x => x.evaluados >= g.min && x.evaluados <= g.max)
-                .sort((a,b) => (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || (b.indice-a.indice));
+                .sort((a,b) => (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal));
             const maxProveedores = PROVEEDORES.length || 1;
             const rangoCobertura = `${Math.round(g.min/maxProveedores*100)}% a ${Math.min(100, Math.round(g.max/maxProveedores*100))}% de cobertura`;
-            return `<div class="coverage-group"><div class="coverage-group-head">${g.titulo}</div><div class="coverage-group-sub">${g.subtitulo} · ${rangoCobertura}</div>${rows.length ? rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b><br><small>${x.cumplimiento}% cumplimiento · ${x.evaluados} proveedor${x.evaluados===1?'':'es'}</small></span><span class="score">${x.indice}</span></div>`).join('') : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
+            return `<div class="coverage-group"><div class="coverage-group-head">${g.titulo}</div><div class="coverage-group-sub">${g.subtitulo} · ${rangoCobertura}</div>${rows.length ? rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b><br><small>${x.evaluados} proveedor${x.evaluados===1?'':'es'} evaluados</small></span><span class="score">${x.cumplimiento}%</span></div>`).join('') : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
         }).join('');
     }
 
@@ -2672,17 +2671,21 @@
             const filaCob = filaRanking + 3 + ranking.length;
             ws.getCell(filaCob, 1).value = 'Ranking por cobertura de proveedores';
             ws.getCell(filaCob, 1).font = { bold: true, size: 12 };
-            ['Grupo', 'Sucursal', 'Proveedores evaluados', 'Cobertura', 'Cumplimiento', 'Índice integral'].forEach((v, i) => {
+            ['Grupo', 'Sucursal', 'Proveedores evaluados', 'Cobertura', 'Cumplimiento'].forEach((v, i) => {
                 const c = ws.getCell(filaCob + 1, i + 1); c.value = v; c.font = { bold:true, color:{argb:'FFFFFFFF'} }; c.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF2C3E50'}};
             });
-            obtenerRankingCobertura().forEach((x,i) => {
+            const rankingCobExcel = obtenerRankingCobertura().sort((a,b) => {
+                const ga = a.evaluados >= 4 ? 0 : 1;
+                const gb = b.evaluados >= 4 ? 0 : 1;
+                return (ga-gb) || (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal);
+            });
+            rankingCobExcel.forEach((x,i) => {
                 const rr = filaCob + 2 + i;
                 ws.getCell(rr,1).value = x.evaluados >= 4 ? '4 a 6 proveedores' : '1 a 3 proveedores';
                 ws.getCell(rr,2).value = x.sucursal;
                 ws.getCell(rr,3).value = x.evaluados;
                 ws.getCell(rr,4).value = x.cobertura / 100; ws.getCell(rr,4).numFmt = '0%';
                 ws.getCell(rr,5).value = x.cumplimiento / 100; ws.getCell(rr,5).numFmt = '0%';
-                ws.getCell(rr,6).value = x.indice / 100; ws.getCell(rr,6).numFmt = '0%';
             });
 
             // Hoja 2: Matriz Sucursal x Proveedor
