@@ -673,7 +673,7 @@
         @media (max-width:900px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} }
         @media (max-width:600px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} .coverage-bar-row{grid-template-columns:105px 1fr 38px;} }
 
-.coverage-ranking-head{display:grid;grid-template-columns:58px 1fr 130px;gap:10px;padding:8px 10px;font-size:11px;font-weight:800;color:#667085;background:#f8fafc;border-bottom:1px solid #e5e7eb;text-transform:none}.coverage-ranking-head span:last-child{text-align:right}.coverage-row{grid-template-columns:58px 1fr 130px}.coverage-row .score{text-align:right}.coverage-row small{display:none}@media(max-width:600px){.coverage-ranking-head{grid-template-columns:42px 1fr 105px}.coverage-row{grid-template-columns:42px 1fr 105px}}
+.coverage-ranking-head{display:grid;grid-template-columns:58px 1fr 130px;gap:10px;padding:8px 10px;font-size:11px;font-weight:800;color:#667085;background:#f8fafc;border-bottom:1px solid #e5e7eb;text-transform:none}.coverage-ranking-head span:last-child{text-align:right}.coverage-row{grid-template-columns:58px 1fr 130px}.coverage-row .score{text-align:right}.coverage-row small{display:block;margin-top:2px;font-size:10px;font-weight:500;color:#667085;line-height:1.2}@media(max-width:600px){.coverage-ranking-head{grid-template-columns:42px 1fr 105px}.coverage-row{grid-template-columns:42px 1fr 105px}}
 </style>
 <!-- Versión final: conexión Sheets robusta + diagnóstico + PDF con columnas parejas -->
 </head>
@@ -2326,7 +2326,7 @@
                 .sort((a,b) => (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal));
             return `<div class="coverage-group"><div class="coverage-group-head">${g.titulo}</div>${rows.length ? `
                 <div class="coverage-ranking-head"><span>Top</span><span>Sucursal</span><span>% Cumplimiento</span></div>
-                ${rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b></span><span class="score">${x.cumplimiento}%</span></div>`).join('')}` : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
+                ${rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b><small>${x.evaluados} ${x.evaluados === 1 ? 'proveedor evaluado' : 'proveedores evaluados'}</small></span><span class="score">${x.cumplimiento}%</span></div>`).join('')}` : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
         }).join('');
     }
 
