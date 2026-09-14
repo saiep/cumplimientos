@@ -426,7 +426,7 @@
 
     const SUCURSALES_NO_DISPONIBLE = { '254': ['CCU','DANONE','MASTELLONE'] };
 
-    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycby4ZY8nhH-cGUafK52dOhEeLhUFrM-ZxnOyz5SLQfhbuHfYT8DIgHfTV9-4eBnre9PAmw/exec';
+    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxO7FaAqkuSqHnLnu3Q3aJ-Uz1i-Tt5D1MZq5W3zu9JV-VtDT8REdERYL-6GX3iqa-mSw/exec';
 
     // ── Conexión robusta con Google Apps Script ──
     async function fetchJSON(url, options = {}) {
@@ -461,9 +461,53 @@
         }
     }
 
+    // ── Lecturas GET optimizadas mediante JSONP ──
+    // Evita el 404 que puede producir el redireccionamiento de Apps Script
+    // a googleusercontent.com cuando se consulta desde GitHub Pages.
+    function jsonpGet(url, timeoutMs = 15000) {
+        return new Promise((resolve, reject) => {
+            const callbackName = '__saiep_jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            const script = document.createElement('script');
+            let terminado = false;
+            const sep = url.includes('?') ? '&' : '?';
+            const src = url + sep + 'callback=' + encodeURIComponent(callbackName);
+
+            const limpiar = () => {
+                if (script.parentNode) script.parentNode.removeChild(script);
+                try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
+                clearTimeout(timer);
+            };
+
+            const terminarError = (mensaje) => {
+                if (terminado) return;
+                terminado = true;
+                limpiar();
+                reject(new Error(mensaje));
+            };
+
+            const timer = setTimeout(() => {
+                terminarError('Tiempo de espera agotado al consultar Google Sheets.');
+            }, timeoutMs);
+
+            window[callbackName] = (data) => {
+                if (terminado) return;
+                terminado = true;
+                limpiar();
+                resolve(data);
+            };
+
+            script.onerror = () => {
+                terminarError('No se pudo consultar el Web App de Google Apps Script.');
+            };
+
+            script.src = src;
+            document.head.appendChild(script);
+        });
+    }
+
     async function probarConexionSheets(mostrarAlerta = true) {
         try {
-            const datos = await fetchJSON(`${GOOGLE_SHEETS_URL}?action=get_ra_config&_=${Date.now()}`);
+            const datos = await jsonpGet(`${GOOGLE_SHEETS_URL}?action=get_ra_config`);
             const ok = Array.isArray(datos) || (datos && typeof datos === 'object');
             if (!ok) throw new Error('La respuesta del Web App no tiene el formato esperado.');
             if (mostrarAlerta) {
@@ -540,7 +584,7 @@
 
     async function cargarConfigZonas() {
         try {
-            const datos = await fetchJSON(`${GOOGLE_SHEETS_URL}?action=get_zonas_config&_=${Date.now()}`);
+            const datos = await jsonpGet(`${GOOGLE_SHEETS_URL}?action=get_zonas_config`);
 
             if (datos && !datos.error) {
                 let configuradas = {};
@@ -701,7 +745,7 @@
     // ════════════════════════════════════════════════════
     async function cargarConfigRA() {
         try {
-            const datos = await fetchJSON(`${GOOGLE_SHEETS_URL}?action=get_ra_config&_=${Date.now()}`);
+            const datos = await jsonpGet(`${GOOGLE_SHEETS_URL}?action=get_ra_config`);
 
             PROVEEDORES.forEach(p => { SUCURSALES_RA[p] = []; });
 
@@ -901,9 +945,12 @@
         document.getElementById('monthInput').value = getMesActual();
 
         try {
-            await cargarConfigZonas();
-            await cargarConfigRA();
-            const ok = await cargarDatosGoogleSheets(true);
+            const resultados = await Promise.all([
+                cargarConfigZonas(),
+                cargarConfigRA(),
+                cargarDatosGoogleSheets(true)
+            ]);
+            const ok = resultados[2];
             generarTabla();
             mostrarDashboard();
 
@@ -1202,7 +1249,7 @@
     async function cargarDatosGoogleSheets(esCargaInicial = false) {
         try {
             const mes = document.getElementById('monthInput').value;
-            const datos = await fetchJSON(`${GOOGLE_SHEETS_URL}?mes=${encodeURIComponent(mes)}&_=${Date.now()}`);
+            const datos = await jsonpGet(`${GOOGLE_SHEETS_URL}?mes=${encodeURIComponent(mes)}`);
 
             if (datos.error) {
                 alert('⚠️ Error al cargar datos: ' + datos.error);
@@ -1677,14 +1724,13 @@
         loader.style.display = 'block';
         try {
             const meses = mesesHistoricoDashboard();
-            const respuestas = await Promise.all(meses.map(async mes => {
-                try {
-                    const d = await fetchJSON(`${GOOGLE_SHEETS_URL}?mes=${encodeURIComponent(mes)}&_=${Date.now()}`);
-                    return {mes, filas:Array.isArray(d)?d:[]};
-                } catch(e) {
-                    console.warn('Histórico no disponible para', mes, e);
-                    return {mes, filas:[]};
-                }
+            const consulta = encodeURIComponent(meses.join(','));
+            const respuesta = await jsonpGet(`${GOOGLE_SHEETS_URL}?action=get_historico&meses=${consulta}`, 30000);
+            const mapaMeses = (respuesta && respuesta.data) ? respuesta.data : {};
+
+            const respuestas = meses.map(mes => ({
+                mes,
+                filas: Array.isArray(mapaMeses[mes]) ? mapaMeses[mes] : []
             }));
 
             const ctx = document.getElementById('dashboardTrendChart').getContext('2d');
@@ -1699,6 +1745,8 @@
                 data:{labels,datasets:[{label:'Cumplimiento global',data:values,borderColor:'#667eea',backgroundColor:'rgba(102,126,234,.12)',fill:true,tension:.3,spanGaps:false,pointRadius:4}]},
                 options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y == null ? 'Sin datos' : c.parsed.y+'%'}}},scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}}}
             });
+        } catch (e) {
+            console.warn('⚠️ Histórico no disponible:', e.message);
         } finally {
             loader.style.display = 'none';
         }
