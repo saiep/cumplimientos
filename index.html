@@ -672,6 +672,8 @@
         .coverage-insight strong { color:#263746; }
         @media (max-width:900px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} }
         @media (max-width:600px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} .coverage-bar-row{grid-template-columns:105px 1fr 38px;} }
+
+.coverage-ranking-head{display:grid;grid-template-columns:58px 1fr 130px;gap:10px;padding:8px 10px;font-size:11px;font-weight:800;color:#667085;background:#f8fafc;border-bottom:1px solid #e5e7eb;text-transform:none}.coverage-ranking-head span:last-child{text-align:right}.coverage-row{grid-template-columns:58px 1fr 130px}.coverage-row .score{text-align:right}.coverage-row small{display:none}@media(max-width:600px){.coverage-ranking-head{grid-template-columns:42px 1fr 105px}.coverage-row{grid-template-columns:42px 1fr 105px}}
 </style>
 <!-- Versión final: conexión Sheets robusta + diagnóstico + PDF con columnas parejas -->
 </head>
@@ -796,12 +798,12 @@
             </div>
             <div class="dash-panel coverage-analysis-panel">
                 <h3>📊 Análisis de cobertura y desempeño</h3>
-                <div class="sub">La lectura del cumplimiento considera también la cantidad de proveedores evaluados.</div>
+                <div class="sub">El análisis considera la cantidad de proveedores con actividad en el período.</div>
                 <div id="coverageAnalysis"></div>
             </div>
             <div class="dash-panel full">
-                <h3>🏆 Ranking de sucursales por cobertura</h3>
-                <div class="sub">Las sucursales se comparan dentro de su grupo según la cantidad de proveedores efectivamente evaluados.</div>
+                <h3>🏆 Ranking de sucursales</h3>
+                <div class="sub">Las sucursales se agrupan según la cantidad de proveedores con actividad.</div>
                 <div id="coverageRanking" class="coverage-ranking"></div>
                 <div class="coverage-note">Dentro de cada grupo, el orden se determina por % de cumplimiento. RA y N/R no se consideran proveedores evaluados.</div>
             </div>
@@ -2315,16 +2317,16 @@
         if (!cont) return;
         const ranking = obtenerRankingCobertura();
         const grupos = [
-            { min: 4, max: 6, titulo: '🟢 4 a 6 proveedores', subtitulo: 'Cobertura alta' },
-            { min: 1, max: 3, titulo: '🟠 1 a 3 proveedores', subtitulo: 'Cobertura baja' }
+            { min: 3, max: 5, titulo: '🟢 3 a 5 proveedores' },
+            { min: 1, max: 2, titulo: '🟠 1 a 2 proveedores' }
         ];
         cont.innerHTML = grupos.map(g => {
             const rows = ranking
                 .filter(x => x.evaluados >= g.min && x.evaluados <= g.max)
                 .sort((a,b) => (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal));
-            const maxProveedores = PROVEEDORES.length || 1;
-            const rangoCobertura = `${Math.round(g.min/maxProveedores*100)}% a ${Math.min(100, Math.round(g.max/maxProveedores*100))}% de cobertura`;
-            return `<div class="coverage-group"><div class="coverage-group-head">${g.titulo}</div><div class="coverage-group-sub">${g.subtitulo} · ${rangoCobertura}</div>${rows.length ? rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b><br><small>${x.evaluados} proveedor${x.evaluados===1?'':'es'} evaluados</small></span><span class="score">${x.cumplimiento}%</span></div>`).join('') : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
+            return `<div class="coverage-group"><div class="coverage-group-head">${g.titulo}</div>${rows.length ? `
+                <div class="coverage-ranking-head"><span>Top</span><span>Sucursal</span><span>% Cumplimiento</span></div>
+                ${rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b></span><span class="score">${x.cumplimiento}%</span></div>`).join('')}` : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
         }).join('');
     }
 
@@ -2346,7 +2348,7 @@
             });
             if (!evaluados) return;
             const item = {s, evaluados, cumplimiento: Math.round(suma/evaluados)};
-            (evaluados >= 4 ? altos : bajos).push(item);
+            (evaluados >= 3 ? altos : bajos).push(item);
         });
         const promedio = arr => arr.length ? Math.round(arr.reduce((a,x)=>a+x.cumplimiento,0)/arr.length) : null;
         const pAltos = promedio(altos), pBajos = promedio(bajos);
@@ -2358,31 +2360,31 @@
         const coberturaReal = posibles ? Math.round(((altos.reduce((n,x)=>n+x.evaluados,0)+bajos.reduce((n,x)=>n+x.evaluados,0))/posibles)*100) : 0;
         let insight = 'La cobertura permite contextualizar el porcentaje de cumplimiento antes de comparar sucursales.';
         if (pAltos !== null && pBajos !== null) {
-            if (pBajos > pAltos) insight = `Las sucursales de <strong>cobertura baja</strong> promedian ${pBajos}%, por encima del ${pAltos}% de las de cobertura alta. Conviene interpretar ese resultado junto con la cantidad de proveedores evaluados.`;
-            else if (pAltos > pBajos) insight = `Las sucursales de <strong>cobertura alta</strong> promedian ${pAltos}%, superando el ${pBajos}% del grupo de cobertura baja. El resultado es más consistente al estar respaldado por una mayor cantidad de proveedores.`;
+            if (pBajos > pAltos) insight = `Las sucursales de <strong>menor cantidad de proveedores</strong> promedian ${pBajos}%, por encima del ${pAltos}% de las de mayor cantidad de proveedores. Conviene interpretar ese resultado junto con la cantidad de proveedores evaluados.`;
+            else if (pAltos > pBajos) insight = `Las sucursales de <strong>mayor cantidad de proveedores</strong> promedian ${pAltos}%, superando el ${pBajos}% del grupo de menor cantidad de proveedores. El resultado es más consistente al estar respaldado por una mayor cantidad de proveedores.`;
             else insight = `Ambos grupos promedian <strong>${pAltos}%</strong>. La diferencia principal está en la amplitud de cobertura de proveedores.`;
         }
         cont.innerHTML = `
             <div class="coverage-analysis">
                 <div class="coverage-analysis-cards">
                     <div class="coverage-analysis-card high">
-                        <div class="ca-title">🟢 4 a 6 proveedores</div>
+                        <div class="ca-title">🟢 3 a 5 proveedores</div>
                         <div class="ca-main">${nAltos} suc. · ${pAltos ?? '-'}%</div>
                         <div class="ca-detail">${pctAltos}% de las sucursales · cumplimiento promedio</div>
                     </div>
                     <div class="coverage-analysis-card low">
-                        <div class="ca-title">🟠 1 a 3 proveedores</div>
+                        <div class="ca-title">🟠 1 a 2 proveedores</div>
                         <div class="ca-main">${nBajos} suc. · ${pBajos ?? '-'}%</div>
                         <div class="ca-detail">${pctBajos}% de las sucursales · cumplimiento promedio</div>
                     </div>
                 </div>
                 <div class="coverage-distribution">
                     <div class="coverage-distribution-title">Distribución de sucursales</div>
-                    <div class="coverage-bar-row"><span>🟢 Cobertura alta</span><div class="coverage-bar-track"><div class="coverage-bar-fill high" style="width:${pctAltos}%"></div></div><strong>${pctAltos}%</strong></div>
-                    <div class="coverage-bar-row"><span>🟠 Cobertura baja</span><div class="coverage-bar-track"><div class="coverage-bar-fill low" style="width:${pctBajos}%"></div></div><strong>${pctBajos}%</strong></div>
+                    <div class="coverage-bar-row"><span>🟢 3 a 5 proveedores</span><div class="coverage-bar-track"><div class="coverage-bar-fill high" style="width:${pctAltos}%"></div></div><strong>${pctAltos}%</strong></div>
+                    <div class="coverage-bar-row"><span>🟠 1 a 2 proveedores</span><div class="coverage-bar-track"><div class="coverage-bar-fill low" style="width:${pctBajos}%"></div></div><strong>${pctBajos}%</strong></div>
                 </div>
                 <div class="coverage-analysis-card" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                    <div><div class="ca-title">📦 Cobertura promedio</div><div class="ca-main">${coberturaReal}%</div></div>
+                    <div><div class="ca-title">📦 Proveedores con actividad</div><div class="ca-main">${coberturaReal}%</div></div>
                     <div><div class="ca-title">🔵 RA activas</div><div class="ca-main">${raTotal}</div></div>
                 </div>
                 <div class="coverage-insight"><strong>💡 Lectura:</strong> ${insight}</div>
@@ -2772,7 +2774,7 @@
             });
             rankingCobExcel.forEach((x,i) => {
                 const rr = filaCob + 2 + i;
-                ws.getCell(rr,1).value = x.evaluados >= 4 ? '4 a 6 proveedores' : '1 a 3 proveedores';
+                ws.getCell(rr,1).value = x.evaluados >= 3 ? '3 a 5 proveedores' : '1 a 2 proveedores';
                 ws.getCell(rr,2).value = x.sucursal;
                 ws.getCell(rr,3).value = x.evaluados;
                 ws.getCell(rr,4).value = x.cobertura / 100; ws.getCell(rr,4).numFmt = '0%';
