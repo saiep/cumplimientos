@@ -1249,7 +1249,18 @@
             throw new Error(paquete?.error || 'Google Sheets devolvió un paquete inválido.');
         }
 
-        DASHBOARD_DATA_CACHE = paquete;
+        // Compatibilidad con respuestas directas y respuestas envueltas en { data: {...} }
+        const paqueteNormalizado = (paquete.data && typeof paquete.data === 'object' &&
+            (paquete.data.meses || paquete.data.zonas || paquete.data.ra))
+            ? paquete.data
+            : paquete;
+
+        if (!paqueteNormalizado.meses || typeof paqueteNormalizado.meses !== 'object') {
+            console.error('❌ Respuesta inesperada de get_dashboard_data:', paquete);
+            throw new Error('Google Sheets respondió sin el bloque de meses del dashboard.');
+        }
+
+        DASHBOARD_DATA_CACHE = paqueteNormalizado;
 
         // Zonas
         if (Array.isArray(paquete.zonas) && paquete.zonas.length) {
@@ -1316,7 +1327,7 @@
             45000
         );
         aplicarPaqueteDashboard(datos);
-        return datos;
+        return DASHBOARD_DATA_CACHE;
     }
 
     async function cargarDatosGoogleSheets(esCargaInicial = false) {
