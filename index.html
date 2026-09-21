@@ -188,6 +188,20 @@
         .admin-access { margin: 4px 0 12px; text-align: right; }
         .admin-access button { border: 0; background: transparent; color: #7f8c8d; font-size: .78em; cursor: pointer; padding: 5px 8px; }
         .admin-access button:hover { color: #2c3e50; text-decoration: underline; }
+        .admin-exit {
+            display:none;
+            border:1px solid #e74c3c;
+            background:#fff5f5;
+            color:#c0392b;
+            border-radius:8px;
+            font-size:.78em;
+            font-weight:700;
+            cursor:pointer;
+            padding:7px 12px;
+        }
+        .admin-exit:hover { background:#fdecec; }
+        body.admin-mode .admin-exit { display:inline-block !important; }
+        body.admin-mode #btnAdminAccess { display:none !important; }
         .public-note { text-align:center; margin:-4px 0 12px; font-size:.78em; color:#7f8c8d; }
         /* ── CARGA INICIAL ── */
         #initialLoading {
@@ -753,7 +767,8 @@
     </div>
 
     <div class="admin-access">
-        <button type="button" onclick="activarModoAdmin()">🔐 Acceso administrador</button>
+        <button type="button" id="btnAdminAccess" onclick="activarModoAdmin()">🔐 Acceso administrador</button>
+        <button type="button" id="btnAdminExit" class="admin-exit" onclick="salirModoAdmin()">🔓 Salir de Admin</button>
     </div>
 
     <div id="loading" class="loading" style="display:none;">
@@ -954,7 +969,7 @@
 
     const SUCURSALES_NO_DISPONIBLE = { '254': ['CCU','DANONE','MASTELLONE'] };
 
-    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzFqlqtyCQ0h0eCOfw3G5XQIunyazkFV6lL8WfnBGLPeCXwjivC-iAqXGuVp5ycfYQBUA/exec';
+    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzFqlqtyCQ0h0eCOfw3G5XQIunyazkFV6lL8WfnBGLPeCXwjivC-iAqXGuVp5ycfYQBUA/exec';    
     let DASHBOARD_DATA_CACHE = null;
 
     // ── Conexión robusta con Google Apps Script ──
@@ -1428,10 +1443,30 @@
         if (clave === 'admin2026') {
             modoAdmin = true;
             document.body.classList.add('admin-mode');
+            const btnSalir = document.getElementById('btnAdminExit');
+            const btnAcceso = document.getElementById('btnAdminAccess');
+            if (btnSalir) btnSalir.style.display = 'inline-block';
+            if (btnAcceso) btnAcceso.style.display = 'none';
             alert('✅ Modo administrador activado.');
         } else {
             alert('❌ Contraseña incorrecta.');
         }
+    }
+
+    function salirModoAdmin() {
+        modoAdmin = false;
+        document.body.classList.remove('admin-mode');
+
+        // Cerramos cualquier ventana administrativa abierta, sin borrar datos.
+        const modalRA = document.getElementById('modalRA');
+        const modalZonas = document.getElementById('modalZonas');
+        if (modalRA) modalRA.style.display = 'none';
+        if (modalZonas) modalZonas.style.display = 'none';
+
+        const btnSalir = document.getElementById('btnAdminExit');
+        const btnAcceso = document.getElementById('btnAdminAccess');
+        if (btnSalir) btnSalir.style.display = 'none';
+        if (btnAcceso) btnAcceso.style.display = 'inline-block';
     }
 
     function getMesActual() {
@@ -1571,6 +1606,10 @@
         archivosSeleccionados = [];
         actualizarListaArchivos();
         document.getElementById('loading').style.display = 'none';
+
+        // Al finalizar la carga de órdenes, dejamos siempre la pantalla en Tabla detallada.
+        actualizarPanelRA();
+        mostrarTablaVista();
     }
 
     async function procesarUnPDF(archivo) {
