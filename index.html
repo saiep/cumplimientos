@@ -2800,36 +2800,110 @@
                 const dashboard = document.getElementById('dashboardView');
                 if (!dashboard || dashboard.style.display === 'none') throw new Error('El Dashboard no está visible.');
                 if (typeof html2canvas !== 'function') throw new Error('No se pudo cargar el componente de captura.');
-                await new Promise(r => setTimeout(r, 300));
-                const canvas = await html2canvas(dashboard, {
-                    scale: Math.min(2, window.devicePixelRatio || 1.5),
-                    useCORS: true, backgroundColor:'#ffffff', logging:false,
-                    width: dashboard.scrollWidth, height: dashboard.scrollHeight,
-                    windowWidth: Math.max(document.documentElement.clientWidth, dashboard.scrollWidth),
-                    windowHeight: Math.max(window.innerHeight, dashboard.scrollHeight)
-                });
+
+                await new Promise(r => setTimeout(r, 500));
+
                 const pageW = 277, pageH = 190;
-                const imgW = pageW;
-                const imgH = canvas.height * imgW / canvas.width;
-                const pageCanvasH = Math.floor(canvas.width * pageH / imgW);
-                let y = 0, page = 0;
-                while (y < canvas.height) {
-                    const sliceH = Math.min(pageCanvasH, canvas.height - y);
-                    const slice = document.createElement('canvas');
-                    slice.width = canvas.width; slice.height = sliceH;
-                    const ctx = slice.getContext('2d');
-                    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,slice.width,slice.height);
-                    ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, slice.width, sliceH);
-                    if (page > 0) pdf.addPage();
-                    pdf.addImage(slice.toDataURL('image/png'), 'PNG', 10, 10, imgW, sliceH * imgW / slice.width);
-                    y += sliceH; page++;
+                const margin = 10;
+                const usableW = pageW;
+                const usableH = pageH;
+
+                // Captura un elemento completo y lo ajusta a una página SIN cortarlo.
+                async function agregarElementoCompleto(elemento, nuevaPagina = false) {
+                    if (!elemento) return;
+                    if (nuevaPagina) pdf.addPage();
+
+                    const canvas = await html2canvas(elemento, {
+                        scale: Math.min(2, window.devicePixelRatio || 1.5),
+                        useCORS: true,
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                        scrollX: 0,
+                        scrollY: -window.scrollY,
+                        width: elemento.scrollWidth,
+                        height: elemento.scrollHeight,
+                        windowWidth: Math.max(document.documentElement.clientWidth, elemento.scrollWidth),
+                        windowHeight: Math.max(window.innerHeight, elemento.scrollHeight)
+                    });
+
+                    const escala = Math.min(usableW / canvas.width, usableH / canvas.height);
+                    const imgW = canvas.width * escala;
+                    const imgH = canvas.height * escala;
+                    const x = margin + (usableW - imgW) / 2;
+                    const y = margin + (usableH - imgH) / 2;
+
+                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgW, imgH);
+                }
+
+                // Página 1: encabezado + KPIs + los dos primeros paneles.
+                pdf.setFontSize(18);
+                pdf.setTextColor(44,62,80);
+                pdf.text('Consolidado de Cumplimientos - Dashboard', margin, 14);
+                pdf.setFontSize(9);
+                pdf.setTextColor(100,110,125);
+                const periodo = document.getElementById('dashboardPeriodLabel')?.innerText || nombreBase;
+                pdf.text(periodo, margin, 20);
+
+                const kpis = Array.from(document.querySelectorAll('#dashboardView .dash-kpi'));
+                const kpiY = 26;
+                const kpiW = (usableW - 16) / Math.max(kpis.length, 1);
+                kpis.forEach((kpi, i) => {
+                    const x = margin + i * (kpiW + 4);
+                    pdf.setFillColor(248,249,252);
+                    pdf.setDrawColor(225,229,238);
+                    pdf.roundedRect(x, kpiY, kpiW, 22, 2, 2, 'FD');
+                    const label = kpi.querySelector('.label')?.innerText || '';
+                    const value = kpi.querySelector('.value')?.innerText || '';
+                    pdf.setFontSize(7);
+                    pdf.setTextColor(120,128,142);
+                    pdf.text(label, x + 4, kpiY + 7);
+                    pdf.setFontSize(13);
+                    pdf.setTextColor(44,62,80);
+                    pdf.text(value, x + 4, kpiY + 16);
+                });
+
+                const panels = Array.from(document.querySelectorAll('#dashboardView .dash-panel'));
+                if (!panels.length) throw new Error('No se encontraron los paneles del Dashboard.');
+
+                // Los dos primeros paneles se colocan lado a lado, sin cortar ninguno.
+                const primeros = panels.slice(0, 2);
+                const panelY = 56;
+                const panelGap = 6;
+                const panelW = (usableW - panelGap) / 2;
+                for (let i = 0; i < primeros.length; i++) {
+                    const canvas = await html2canvas(primeros[i], {
+                        scale: Math.min(2, window.devicePixelRatio || 1.5),
+                        useCORS: true,
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                        width: primeros[i].scrollWidth,
+                        height: primeros[i].scrollHeight,
+                        windowWidth: Math.max(document.documentElement.clientWidth, primeros[i].scrollWidth),
+                        windowHeight: Math.max(window.innerHeight, primeros[i].scrollHeight)
+                    });
+                    const escala = Math.min(panelW / canvas.width, (usableH - panelY) / canvas.height);
+                    const imgW = canvas.width * escala;
+                    const imgH = canvas.height * escala;
+                    const x = margin + i * (panelW + panelGap) + (panelW - imgW) / 2;
+                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, panelY, imgW, imgH);
+                }
+
+                // Cada panel restante ocupa una página completa. Así ranking, gráficos,
+                // evolución y matriz nunca se parten en un salto de hoja.
+                for (const panel of panels.slice(2)) {
+                    await agregarElementoCompleto(panel, true);
                 }
             } else {
                 const table = document.getElementById('tablaConsolidado');
                 if (!table) throw new Error('No se encontró la tabla detallada.');
                 const head = [Array.from(table.querySelectorAll('thead th')).map(th => th.innerText.trim())];
                 const body = Array.from(table.querySelectorAll('tbody tr')).map(tr => Array.from(tr.cells).map(td => td.innerText.trim()));
-                pdf.autoTable({head, body, startY:20, theme:'grid', styles:{fontSize:8, halign:'center'}, headStyles:{fillColor:[102,126,234]}, margin:{left:10,right:10}});
+                pdf.autoTable({
+                    head, body, startY:20, theme:'grid',
+                    styles:{fontSize:8, halign:'center'},
+                    headStyles:{fillColor:[102,126,234]},
+                    margin:{left:10,right:10}
+                });
             }
 
             pdf.save(`Consolidado_${nombreBase}.pdf`);
