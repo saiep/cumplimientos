@@ -142,6 +142,9 @@
         .view-switch { display:flex; justify-content:center; gap:8px; margin:10px 0 20px; flex-wrap:wrap; }
         .view-switch button { border:1px solid #d8dce8; background:#f7f8fc; color:#4a5568; padding:10px 18px; border-radius:9px; font-weight:700; cursor:pointer; }
         .view-switch button.active { background:#2c3e50; color:#fff; border-color:#2c3e50; }
+        .view-switch #btnCapturaDashboard { background:#eef6ff; color:#1565c0; border-color:#90caf9; }
+        .view-switch #btnCapturaDashboard:hover { background:#e3f2fd; border-color:#64b5f6; }
+        .view-switch #btnCapturaDashboard:disabled { opacity:.65; cursor:wait; }
         #dashboardView { display:none; margin-top:25px; }
         .dashboard-head { display:flex; justify-content:space-between; align-items:flex-end; gap:15px; margin-bottom:18px; flex-wrap:wrap; }
         .dashboard-head h2 { color:#2c3e50; margin:0; }
@@ -804,6 +807,7 @@
     <div class="view-switch" id="viewSwitch" style="display:none;">
         <button type="button" id="btnDashboardView" class="active">📊 Dashboard</button>
         <button type="button" id="btnTableView">📋 Tabla detallada</button>
+        <button type="button" id="btnCapturaDashboard" title="Capturar todo el Dashboard en una sola imagen">📸 Capturar Dashboard</button>
     </div>
 
     <section id="dashboardView">
@@ -1549,6 +1553,7 @@
 
     document.getElementById('btnDashboardView').addEventListener('click', mostrarDashboard);
     document.getElementById('btnTableView').addEventListener('click', mostrarTablaVista);
+    document.getElementById('btnCapturaDashboard').addEventListener('click', capturarDashboardCompleto);
 
     function actualizarListaArchivos() {
         if (archivosSeleccionados.length > 0) {
@@ -2267,6 +2272,67 @@
         }
     }
 
+    async function capturarDashboardCompleto() {
+        const dashboard = document.getElementById('dashboardView');
+        const boton = document.getElementById('btnCapturaDashboard');
+        if (!dashboard || dashboard.style.display === 'none') {
+            alert('⚠️ Primero seleccione la vista Dashboard.');
+            return;
+        }
+        if (typeof html2canvas !== 'function') {
+            alert('❌ No se pudo cargar el componente de captura de pantalla.');
+            return;
+        }
+
+        const textoOriginal = boton ? boton.innerHTML : '';
+        if (boton) {
+            boton.disabled = true;
+            boton.innerHTML = '⏳ Generando captura…';
+        }
+
+        try {
+            // Damos un instante para asegurar que gráficos, ranking, evolución y matriz
+            // hayan terminado de renderizarse antes de tomar la captura.
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            const canvas = await html2canvas(dashboard, {
+                scale: Math.min(2, window.devicePixelRatio || 1.5),
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                scrollX: 0,
+                scrollY: -window.scrollY,
+                width: dashboard.scrollWidth,
+                height: dashboard.scrollHeight,
+                windowWidth: Math.max(document.documentElement.clientWidth, dashboard.scrollWidth),
+                windowHeight: Math.max(window.innerHeight, dashboard.scrollHeight)
+            });
+
+            const mes = document.getElementById('monthInput')?.value || 'periodo';
+            const zona = String(zonaSeleccionada || 'zona').replace(/[\\/:*?"<>|]/g, '-');
+            const nombre = `Dashboard_${mes}_${zona}.png`;
+
+            canvas.toBlob(blob => {
+                if (!blob) throw new Error('No se pudo generar la imagen.');
+                const enlace = document.createElement('a');
+                enlace.href = URL.createObjectURL(blob);
+                enlace.download = nombre;
+                document.body.appendChild(enlace);
+                enlace.click();
+                enlace.remove();
+                setTimeout(() => URL.revokeObjectURL(enlace.href), 1000);
+            }, 'image/png');
+        } catch (error) {
+            console.error('❌ Error capturando Dashboard:', error);
+            alert('❌ No se pudo generar la captura del Dashboard.\n\n' + error.message);
+        } finally {
+            if (boton) {
+                boton.disabled = false;
+                boton.innerHTML = textoOriginal;
+            }
+        }
+    }
+
     function mostrarDashboard() {
         vistaActual = 'dashboard';
         actualizarBotonesExportacion();
@@ -2611,23 +2677,170 @@
     }
 
     // ════════════════════════════════════════════════════
-    // EXPORTAR EXCEL
-    // ════════════════════════════════════════════════════
-
-    // ════════════════════════════════════════════════════
     // EXPORTACIONES SEGÚN LA VISTA ACTUAL
     // ════════════════════════════════════════════════════
 
     function obtenerNombreArchivoVista() {
-        const mesSeleccionado = document.getElementById('monthInput').value || getMesActual();
+        const mes = document.getElementById('monthInput')?.value || getMesActual();
         const zona = String(zonaSeleccionada || 'Zona').replace(/[\\/:*?"<>|]/g, '-');
-        return `${mesSeleccionado}_${zona}`;
+        return `${mes}_${zona}`;
+    }
+
+    async function exportarExcel() {
+        try {
+            if (typeof ExcelJS === 'undefined' || typeof saveAs === 'undefined') {
+                throw new Error('No se pudo cargar el componente de exportación Excel.');
+            }
+
+            const nombreBase = obtenerNombreArchivoVista();
+            const workbook = new ExcelJS.Workbook();
+
+            if (vistaActual === 'dashboard') {
+                const resumen = resumenDashboardActual();
+                const ws = workbook.addWorksheet('Dashboard');
+                ws.columns = [
+                    { width: 24 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }
+                ];
+
+                ws.mergeCells('A1:F1');
+                ws.getCell('A1').value = 'CONSOLIDADO DE CUMPLIMIENTOS - DASHBOARD';
+                ws.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+                ws.getCell('A1').fill = { type:'pattern', pattern:'solid', fgColor:{argb:'667EEA'} };
+                ws.getCell('A1').alignment = { horizontal:'center' };
+
+                ws.addRow(['Período', document.getElementById('monthInput')?.value || '', 'Zona', zonaSeleccionada]);
+                ws.addRow([]);
+                ws.addRow(['Indicador','Valor']);
+                ws.addRow(['Cumplimiento global', resumen.promGlobal + '%']);
+                ws.addRow(['Pedidos', resumen.pedidos]);
+                ws.addRow(['Sucursales', resumen.sucursales.length]);
+                ws.addRow(['Proveedores', PROVEEDORES.length]);
+                ws.addRow(['RA activas', resumen.ra]);
+                ws.addRow([]);
+
+                ws.addRow(['Cumplimiento por proveedor']);
+                ws.addRow(['Proveedor','Cumplimiento']);
+                PROVEEDORES.forEach(p => ws.addRow([p, resumen.promProveedor[p] == null ? '-' : resumen.promProveedor[p] + '%']));
+                ws.addRow([]);
+
+                ws.addRow(['Ranking de sucursales']);
+                ws.addRow(['Sucursal','Cumplimiento','Proveedores evaluados','Cobertura']);
+                obtenerRankingCobertura().forEach(x => ws.addRow([x.sucursal, x.cumplimiento + '%', x.evaluados, x.cobertura + '%']));
+
+                const matriz = workbook.addWorksheet('Matriz');
+                matriz.columns = [{width:14}, ...PROVEEDORES.map(() => ({width:15}))];
+                matriz.addRow(['Sucursal', ...PROVEEDORES]);
+                obtenerSucursalesZonaDashboard().forEach(suc => {
+                    const fila = [suc];
+                    PROVEEDORES.forEach(p => {
+                        if (SUCURSALES_NO_DISPONIBLE[suc]?.includes(p)) fila.push('N/R');
+                        else if ((SUCURSALES_RA[p] || []).includes(suc)) fila.push('RA');
+                        else {
+                            const c = cumplimientoDeDato(datosConsolidados[suc]?.[p]);
+                            fila.push(c == null ? '-' : c + '%');
+                        }
+                    });
+                    matriz.addRow(fila);
+                });
+
+                const hist = workbook.addWorksheet('Evolución mensual');
+                hist.columns = [{width:16},{width:18}];
+                hist.addRow(['Mes','Cumplimiento global']);
+                if (typeof mesesHistoricoDashboard === 'function' && DASHBOARD_DATA_CACHE) {
+                    mesesHistoricoDashboard().forEach(mes => {
+                        const info = DASHBOARD_DATA_CACHE.meses?.[mes];
+                        if (!info) { hist.addRow([mes,'-']); return; }
+                        const vals=[];
+                        Object.entries(info.cells || {}).forEach(([clave,valor])=>{
+                            const [suc,prov]=clave.split('|');
+                            if (!obtenerSucursalesZonaDashboard().includes(suc) || !PROVEEDORES.includes(prov)) return;
+                            if (SUCURSALES_NO_DISPONIBLE[suc]?.includes(prov)) return;
+                            if ((SUCURSALES_RA[prov]||[]).includes(suc)) return;
+                            const n=Number(valor); if(Number.isFinite(n)) vals.push(n);
+                        });
+                        hist.addRow([mes, vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)+'%' : '-']);
+                    });
+                }
+
+                [ws, matriz, hist].forEach(sheet => {
+                    sheet.eachRow(row => row.eachCell(cell => {
+                        cell.border = { bottom:{style:'thin', color:{argb:'E5E7EB'}} };
+                    }));
+                    sheet.getRow(1).font = { bold:true };
+                });
+            } else {
+                const ws = workbook.addWorksheet('Cumplimientos');
+                const table = document.getElementById('tablaConsolidado');
+                if (!table) throw new Error('No se encontró la tabla detallada.');
+                Array.from(table.rows).forEach((tr, ri) => {
+                    const vals = Array.from(tr.cells).map(td => td.innerText.trim());
+                    const row = ws.addRow(vals);
+                    if (ri === 0) row.font = { bold:true, color:{argb:'FFFFFFFF'} };
+                    if (ri === 0) row.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'667EEA'} };
+                });
+                ws.columns = [12, ...PROVEEDORES.map(() => 15)].map(width => ({width}));
+            }
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), `Consolidado_${nombreBase}.xlsx`);
+        } catch (error) {
+            console.error('❌ Error exportando Excel:', error);
+            alert('❌ No se pudo generar el Excel.\n\n' + error.message);
+        }
+    }
+
+    async function exportarPDF() {
+        try {
+            if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('No se pudo cargar el componente de exportación PDF.');
+            const nombreBase = obtenerNombreArchivoVista();
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+
+            if (vistaActual === 'dashboard') {
+                const dashboard = document.getElementById('dashboardView');
+                if (!dashboard || dashboard.style.display === 'none') throw new Error('El Dashboard no está visible.');
+                if (typeof html2canvas !== 'function') throw new Error('No se pudo cargar el componente de captura.');
+                await new Promise(r => setTimeout(r, 300));
+                const canvas = await html2canvas(dashboard, {
+                    scale: Math.min(2, window.devicePixelRatio || 1.5),
+                    useCORS: true, backgroundColor:'#ffffff', logging:false,
+                    width: dashboard.scrollWidth, height: dashboard.scrollHeight,
+                    windowWidth: Math.max(document.documentElement.clientWidth, dashboard.scrollWidth),
+                    windowHeight: Math.max(window.innerHeight, dashboard.scrollHeight)
+                });
+                const pageW = 277, pageH = 190;
+                const imgW = pageW;
+                const imgH = canvas.height * imgW / canvas.width;
+                const pageCanvasH = Math.floor(canvas.width * pageH / imgW);
+                let y = 0, page = 0;
+                while (y < canvas.height) {
+                    const sliceH = Math.min(pageCanvasH, canvas.height - y);
+                    const slice = document.createElement('canvas');
+                    slice.width = canvas.width; slice.height = sliceH;
+                    const ctx = slice.getContext('2d');
+                    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,slice.width,slice.height);
+                    ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, slice.width, sliceH);
+                    if (page > 0) pdf.addPage();
+                    pdf.addImage(slice.toDataURL('image/png'), 'PNG', 10, 10, imgW, sliceH * imgW / slice.width);
+                    y += sliceH; page++;
+                }
+            } else {
+                const table = document.getElementById('tablaConsolidado');
+                if (!table) throw new Error('No se encontró la tabla detallada.');
+                const head = [Array.from(table.querySelectorAll('thead th')).map(th => th.innerText.trim())];
+                const body = Array.from(table.querySelectorAll('tbody tr')).map(tr => Array.from(tr.cells).map(td => td.innerText.trim()));
+                pdf.autoTable({head, body, startY:20, theme:'grid', styles:{fontSize:8, halign:'center'}, headStyles:{fillColor:[102,126,234]}, margin:{left:10,right:10}});
+            }
+
+            pdf.save(`Consolidado_${nombreBase}.pdf`);
+        } catch (error) {
+            console.error('❌ Error exportando PDF:', error);
+            alert('❌ No se pudo generar el PDF.\n\n' + error.message);
+        }
     }
 
     function actualizarBotonesExportacionSeguro() {
-        if (typeof actualizarBotonesExportacion === 'function') {
-            actualizarBotonesExportacion();
-        }
+        if (typeof actualizarBotonesExportacion === 'function') actualizarBotonesExportacion();
     }
 
 </script>
