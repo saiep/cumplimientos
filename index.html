@@ -2586,7 +2586,6 @@
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
             const { jsPDF } = window.jspdf;
-            // A4 apaisado: evita comprimir demasiado el dashboard y aprovecha mejor el ancho.
             const pdf = new jsPDF('l', 'mm', 'a4');
             const pageW = 297;
             const pageH = 210;
@@ -2611,7 +2610,7 @@
 
             async function capturarElemento(elemento) {
                 return await html2canvas(elemento, {
-                    scale: Math.min(2, window.devicePixelRatio || 1.5),
+                    scale: 2,
                     useCORS: true,
                     backgroundColor: '#ffffff',
                     logging: false,
@@ -2624,73 +2623,88 @@
                 });
             }
 
-            function colocarCanvas(canvas, x, y, maxW, maxH) {
-                const escala = Math.min(maxW / canvas.width, maxH / canvas.height);
+            // Coloca el bloque a todo el ancho disponible, manteniendo SIEMPRE
+            // su relación de aspecto. Nunca se lo obliga a entrar en una altura fija.
+            function colocarCanvas(canvas, x, y, maxW) {
+                const escala = maxW / canvas.width;
                 const w = canvas.width * escala;
                 const h = canvas.height * escala;
-                pdf.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', x + (maxW - w) / 2, y, w, h, undefined, 'FAST');
+                pdf.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', x, y, w, h, undefined, 'FAST');
                 return h;
             }
-
-            // ─────────────────────────────────────────────
-            // PÁGINA 1: KPIs + proveedor + análisis
-            // Se capturan por separado para conservar proporciones.
-            // ─────────────────────────────────────────────
-            encabezado('DASHBOARD DE CUMPLIMIENTO');
 
             const kpis = dashboard.querySelector('.dash-kpis');
             const providerPanel = dashboard.querySelector('.dash-grid .dash-panel:nth-child(1)');
             const analysisPanel = dashboard.querySelector('.dash-grid .coverage-analysis-panel');
+            const rankingPanel = dashboard.querySelector('#coverageRanking')?.closest('.dash-panel');
+            const trendPanel = dashboard.querySelector('#dashboardTrendChart')?.closest('.dash-panel');
+            const matrixPanel = dashboard.querySelector('#dashboardHeatmapHead')?.closest('.dash-panel');
 
+            // ==========================================================
+            // PÁGINA 1 — RESUMEN
+            // KPIs + gráfico de proveedores. Sin deformar ni achatar.
+            // ==========================================================
+            encabezado('DASHBOARD DE CUMPLIMIENTO');
             let y = 16;
+
             if (kpis) {
                 const c = await capturarElemento(kpis);
-                const h = colocarCanvas(c, margin, y, usableW, 25);
-                y += h + 4;
+                y += colocarCanvas(c, margin, y, usableW) + 5;
             }
 
             if (providerPanel) {
                 const c = await capturarElemento(providerPanel);
-                const h = colocarCanvas(c, margin, y, usableW, 105);
-                y += h + 4;
+                colocarCanvas(c, margin, y, usableW);
             }
+
+            // ==========================================================
+            // PÁGINA 2 — ANÁLISIS + RANKING
+            // Cada bloque usa el ancho completo y conserva proporción.
+            // ==========================================================
+            pdf.addPage();
+            encabezado('ANÁLISIS DE COBERTURA Y RANKING');
+            y = 16;
 
             if (analysisPanel) {
                 const c = await capturarElemento(analysisPanel);
-                colocarCanvas(c, margin, y, usableW, Math.max(usableH - y, 35));
+                y += colocarCanvas(c, margin, y, usableW) + 6;
             }
-
-            // ─────────────────────────────────────────────
-            // PÁGINA 2: ranking + evolución
-            // ─────────────────────────────────────────────
-            pdf.addPage();
-            encabezado('RANKING Y EVOLUCIÓN');
-
-            const rankingPanel = dashboard.querySelector('#coverageRanking')?.closest('.dash-panel');
-            const trendPanel = dashboard.querySelector('#dashboardTrendChart')?.closest('.dash-panel');
-            y = 16;
 
             if (rankingPanel) {
                 const c = await capturarElemento(rankingPanel);
-                const h = colocarCanvas(c, margin, y, usableW, 75);
-                y += h + 5;
+                colocarCanvas(c, margin, y, usableW);
             }
 
+            // ==========================================================
+            // PÁGINA 3 — EVOLUCIÓN
+            // Se deja grande para que el gráfico sea legible.
+            // ==========================================================
+            pdf.addPage();
+            encabezado('EVOLUCIÓN MENSUAL');
             if (trendPanel) {
                 const c = await capturarElemento(trendPanel);
-                colocarCanvas(c, margin, y, usableW, Math.max(usableH - y, 45));
+                colocarCanvas(c, margin, 16, usableW);
             }
 
-            // ─────────────────────────────────────────────
-            // PÁGINA 3: matriz exclusiva
-            // Nunca se comparte página con otro bloque.
-            // ─────────────────────────────────────────────
-            const matrixPanel = dashboard.querySelector('#dashboardHeatmapHead')?.closest('.dash-panel');
+            // ==========================================================
+            // PÁGINA 4 — MATRIZ
+            // Página exclusiva. Nunca se comprime junto con otro bloque.
+            // ==========================================================
             if (matrixPanel) {
                 pdf.addPage();
                 encabezado('MATRIZ SUCURSAL × PROVEEDOR');
                 const c = await capturarElemento(matrixPanel);
-                colocarCanvas(c, margin, 16, usableW, usableH - 16);
+                colocarCanvas(c, margin, 16, usableW);
+            }
+
+            // Pie de página discreto en todas las páginas.
+            const totalPaginas = pdf.internal.getNumberOfPages();
+            for (let i = 1; i <= totalPaginas; i++) {
+                pdf.setPage(i);
+                pdf.setFontSize(6.5);
+                pdf.setFont(undefined, 'normal');
+                pdf.setTextColor(130,130,130);
+                pdf.text(`Página ${i} de ${totalPaginas}`, pageW - margin, pageH - 3, {align:'right'});
             }
 
             pdf.save(`Dashboard_${obtenerNombreArchivoVista()}.pdf`);
