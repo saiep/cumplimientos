@@ -1801,23 +1801,45 @@
     // ════════════════════════════════════════════════════
     // CONEXIÓN ROBUSTA CON GOOGLE SHEETS
     // ════════════════════════════════════════════════════
-    async function cargarPaqueteDashboard(mes) {
-        actualizarEstadoCarga(
-            '⏳ Conectando con Google Sheets',
-            'Consultando la información del dashboard...'
-        );
+    async function cargarPaqueteDashboard(mes, intentoActual = 1, maxIntentos = 3) {
+        const mensajes = [
+            ['⏳ Conectando con Google Sheets', 'Consultando la información del dashboard...'],
+            ['🔄 Cargando últimos datos', 'La conexión está tardando un poco. Estamos reintentando automáticamente...'],
+            ['🔄 Verificando conexión', 'Estamos obteniendo los últimos datos disponibles. No es necesario hacer nada.']
+        ];
 
-        // UNA SOLA CONSULTA. Si falla, se informa el error y el usuario
-        // puede utilizar el botón Reintentar conexión manualmente.
-        const url = `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mes)}`;
-        const datos = await jsonpGet(url, 20000);
+        const mensaje = mensajes[Math.min(intentoActual - 1, mensajes.length - 1)];
+        actualizarEstadoCarga(mensaje[0], mensaje[1]);
 
-        if (!datos || datos.error) {
-            throw new Error(datos?.error || 'Google Apps Script devolvió una respuesta vacía.');
+        try {
+            const url = `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mes)}`;
+            const datos = await jsonpGet(url, 20000);
+
+            if (!datos || datos.error) {
+                throw new Error(datos?.error || 'Google Apps Script devolvió una respuesta vacía.');
+            }
+
+            aplicarPaqueteDashboard(datos);
+            return DASHBOARD_DATA_CACHE;
+
+        } catch (error) {
+            console.warn(`⚠️ Falló el intento ${intentoActual} de ${maxIntentos}:`, error);
+
+            if (intentoActual < maxIntentos) {
+                const espera = intentoActual * 1500;
+
+                actualizarEstadoCarga(
+                    '🔄 Cargando últimos datos',
+                    `Estamos reintentando la conexión automáticamente. Intento ${intentoActual + 1} de ${maxIntentos}...`
+                );
+
+                await new Promise(resolve => setTimeout(resolve, espera));
+
+                return cargarPaqueteDashboard(mes, intentoActual + 1, maxIntentos);
+            }
+
+            throw error;
         }
-
-        aplicarPaqueteDashboard(datos);
-        return DASHBOARD_DATA_CACHE;
     }
 
     async function cargarDatosGoogleSheets(esCargaInicial = false) {
@@ -1843,9 +1865,9 @@
 
             if (esCargaInicial) {
                 mostrarErrorCargaInicial(
-                    'No fue posible conectar en la consulta inicial. ' +
+                    'No fue posible obtener los datos después de los reintentos automáticos. ' +
                     (error.message || '') +
-                    ' Podés volver a intentar con el botón de conexión.'
+                    ' Podés volver a intentar la conexión.'
                 );
             } else {
                 alert('⚠️ No se pudieron cargar los datos del período.\n\n' + error.message);
@@ -1868,14 +1890,14 @@
         overlay.style.display = 'flex';
     }
 
-    async function reintentarConexionSheets() {
+    async async function reintentarConexionSheets() {
         const mes = document.getElementById('monthInput').value || getMesActual();
+
         mostrarCargaInicial(
-            '🔄 Reintentando conexión',
+            '🔄 Cargando últimos datos',
             'Volviendo a consultar Google Sheets. No es necesario recargar la página.'
         );
 
-        // Si el intento anterior quedó con una respuesta parcial, forzamos una nueva consulta.
         DASHBOARD_DATA_CACHE = null;
 
         const ok = await cargarDatosGoogleSheets(true);
