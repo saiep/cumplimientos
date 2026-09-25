@@ -647,6 +647,26 @@
         .coverage-row .pos { font-weight:800; color:#7f8c8d; }
         .coverage-row .score { text-align:right; font-weight:800; }
         .coverage-empty { padding:14px; color:#999; font-size:.82em; text-align:center; }
+        .coverage-analysis-panel { min-height: 100%; }
+        .coverage-analysis { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+        .coverage-analysis-cards { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+        .coverage-analysis-card { border:1px solid #e6eaf0; border-radius:10px; padding:11px; background:#fff; }
+        .coverage-analysis-card.high { border-left:4px solid #27ae60; }
+        .coverage-analysis-card.low { border-left:4px solid #f39c12; }
+        .coverage-analysis-card .ca-title { font-weight:800; font-size:.84em; color:#2c3e50; }
+        .coverage-analysis-card .ca-main { font-size:1.45em; font-weight:900; margin-top:4px; color:#243447; }
+        .coverage-analysis-card .ca-detail { font-size:.72em; color:#7f8c8d; margin-top:3px; }
+        .coverage-distribution { border-top:1px solid #edf0f4; padding-top:10px; }
+        .coverage-distribution-title { font-size:.76em; font-weight:800; color:#5f6b78; margin-bottom:7px; }
+        .coverage-bar-row { display:grid; grid-template-columns:125px 1fr 40px; align-items:center; gap:7px; font-size:.72em; margin:6px 0; }
+        .coverage-bar-track { height:8px; border-radius:10px; background:#edf0f4; overflow:hidden; }
+        .coverage-bar-fill { height:100%; border-radius:10px; }
+        .coverage-bar-fill.high { background:#27ae60; }
+        .coverage-bar-fill.low { background:#f39c12; }
+        .coverage-insight { padding:10px 11px; border-radius:9px; background:#f7f9fb; font-size:.75em; line-height:1.45; color:#596573; }
+        .coverage-insight strong { color:#263746; }
+        @media (max-width:900px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} }
+        @media (max-width:600px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} .coverage-bar-row{grid-template-columns:105px 1fr 38px;} }
         .coverage-note { margin-top:10px; font-size:.75em; color:#7f8c8d; }
         @media (max-width:900px){ .coverage-ranking{grid-template-columns:repeat(2,minmax(0,1fr));} }
         @media (max-width:600px){ .coverage-ranking{grid-template-columns:1fr;} .coverage-row{grid-template-columns:38px 1fr 52px;} }
@@ -772,6 +792,11 @@
                 <h3>🏆 Cumplimiento por proveedor</h3>
                 <div class="sub">Promedio del período y zona seleccionados</div>
                 <div class="dash-chart-wrap"><canvas id="dashboardProviderChart"></canvas></div>
+            </div>
+            <div class="dash-panel coverage-analysis-panel">
+                <h3>📊 Análisis de cobertura y desempeño</h3>
+                <div class="sub">El análisis considera la cantidad de proveedores con actividad en el período.</div>
+                <div id="coverageAnalysis"></div>
             </div>
             <div class="dash-panel full">
                 <h3>🏆 Ranking de sucursales por cobertura</h3>
@@ -2286,8 +2311,8 @@
             const indice = cumplimiento === null ? null : Math.round(cumplimiento * 0.70 + cobertura * 0.30);
             return { sucursal:s, evaluados, cobertura, cumplimiento, indice };
         }).filter(x => x.cumplimiento !== null).sort((a,b) => {
-            const ga = a.evaluados >= 4 ? 0 : 1;
-            const gb = b.evaluados >= 4 ? 0 : 1;
+            const ga = a.evaluados >= 3 ? 0 : 1;
+            const gb = b.evaluados >= 3 ? 0 : 1;
             return (ga-gb) || (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal);
         });
     }
@@ -2297,8 +2322,8 @@
         if (!cont) return;
         const ranking = obtenerRankingCobertura();
         const grupos = [
-            { min: 4, max: 6, titulo: '🟢 4 a 6 proveedores', subtitulo: 'Cobertura alta' },
-            { min: 1, max: 3, titulo: '🟠 1 a 3 proveedores', subtitulo: 'Cobertura baja' }
+            { min: 3, max: 5, titulo: '🟢 3 a 5 proveedores', subtitulo: 'Cobertura alta' },
+            { min: 1, max: 2, titulo: '🟠 1 a 2 proveedores', subtitulo: 'Cobertura baja' }
         ];
         cont.innerHTML = grupos.map(g => {
             const rows = ranking
@@ -2308,6 +2333,77 @@
             const rangoCobertura = `${Math.round(g.min/maxProveedores*100)}% a ${Math.min(100, Math.round(g.max/maxProveedores*100))}% de cobertura`;
             return `<div class="coverage-group"><div class="coverage-group-head">${g.titulo}</div><div class="coverage-group-sub">${g.subtitulo} · ${rangoCobertura}</div>${rows.length ? rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b><br><small>${x.evaluados} proveedor${x.evaluados===1?'':'es'} evaluados</small></span><span class="score">${x.cumplimiento}%</span></div>`).join('') : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
         }).join('');
+    }
+
+    function renderAnalisisCobertura(r) {
+        const cont = document.getElementById('coverageAnalysis');
+        if (!cont) return;
+        const sucursales = r.sucursales || [];
+        const total = sucursales.length;
+        const totalProv = PROVEEDORES.length || 1;
+        let altos = [], bajos = [];
+
+        sucursales.forEach(s => {
+            let evaluados = 0, suma = 0;
+            PROVEEDORES.forEach(p => {
+                const esND = SUCURSALES_NO_DISPONIBLE[s]?.includes(p);
+                const esRA = (SUCURSALES_RA[p] || []).includes(s);
+                if (esND || esRA) return;
+                const c = cumplimientoDeDato(datosConsolidados[s]?.[p]);
+                if (c !== null && Number.isFinite(Number(c))) {
+                    evaluados++;
+                    suma += Number(c);
+                }
+            });
+            if (!evaluados) return;
+            const item = { s, evaluados, cumplimiento: Math.round(suma / evaluados) };
+            (evaluados >= 3 ? altos : bajos).push(item);
+        });
+
+        const promedio = arr => arr.length ? Math.round(arr.reduce((a,x)=>a+x.cumplimiento,0) / arr.length) : null;
+        const pAltos = promedio(altos);
+        const pBajos = promedio(bajos);
+        const nAltos = altos.length;
+        const nBajos = bajos.length;
+        const pctAltos = total ? Math.round(nAltos / total * 100) : 0;
+        const pctBajos = total ? Math.round(nBajos / total * 100) : 0;
+        const raTotal = PROVEEDORES.reduce((n,p) => n + (SUCURSALES_RA[p] || []).filter(s => sucursales.includes(s)).length, 0);
+        const posibles = total * totalProv;
+        const evaluaciones = altos.reduce((n,x)=>n+x.evaluados,0) + bajos.reduce((n,x)=>n+x.evaluados,0);
+        const coberturaReal = posibles ? Math.round((evaluaciones / posibles) * 100) : 0;
+
+        let insight = 'La cobertura permite contextualizar el porcentaje de cumplimiento antes de comparar sucursales.';
+        if (pAltos !== null && pBajos !== null) {
+            if (pBajos > pAltos) insight = `Las sucursales de <strong>menor cantidad de proveedores</strong> promedian ${pBajos}%, por encima del ${pAltos}% de las de mayor cantidad de proveedores. Conviene interpretar ese resultado junto con la cantidad de proveedores evaluados.`;
+            else if (pAltos > pBajos) insight = `Las sucursales de <strong>mayor cantidad de proveedores</strong> promedian ${pAltos}%, superando el ${pBajos}% del grupo de menor cantidad de proveedores. El resultado es más consistente al estar respaldado por una mayor cantidad de proveedores.`;
+            else insight = `Ambos grupos promedian <strong>${pAltos}%</strong>. La diferencia principal está en la amplitud de cobertura de proveedores.`;
+        }
+
+        cont.innerHTML = `
+            <div class="coverage-analysis">
+                <div class="coverage-analysis-cards">
+                    <div class="coverage-analysis-card high">
+                        <div class="ca-title">🟢 3 a 5 proveedores</div>
+                        <div class="ca-main">${nAltos} suc. · ${pAltos ?? '-'}%</div>
+                        <div class="ca-detail">${pctAltos}% de las sucursales · cumplimiento promedio</div>
+                    </div>
+                    <div class="coverage-analysis-card low">
+                        <div class="ca-title">🟠 1 a 2 proveedores</div>
+                        <div class="ca-main">${nBajos} suc. · ${pBajos ?? '-'}%</div>
+                        <div class="ca-detail">${pctBajos}% de las sucursales · cumplimiento promedio</div>
+                    </div>
+                </div>
+                <div class="coverage-distribution">
+                    <div class="coverage-distribution-title">Distribución de sucursales</div>
+                    <div class="coverage-bar-row"><span>🟢 3 a 5 proveedores</span><div class="coverage-bar-track"><div class="coverage-bar-fill high" style="width:${pctAltos}%"></div></div><strong>${pctAltos}%</strong></div>
+                    <div class="coverage-bar-row"><span>🟠 1 a 2 proveedores</span><div class="coverage-bar-track"><div class="coverage-bar-fill low" style="width:${pctBajos}%"></div></div><strong>${pctBajos}%</strong></div>
+                </div>
+                <div class="coverage-analysis-card" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <div><div class="ca-title">📦 Proveedores con actividad</div><div class="ca-main">${coberturaReal}%</div></div>
+                    <div><div class="ca-title">🔵 RA activas</div><div class="ca-main">${raTotal}</div></div>
+                </div>
+                <div class="coverage-insight"><strong>💡 Lectura:</strong> ${insight}</div>
+            </div>`;
     }
 
     function actualizarDashboardActual() {
@@ -2322,6 +2418,7 @@
         document.getElementById('dashKpiSucursales').textContent = r.sucursales.length;
         document.getElementById('dashKpiProveedores').textContent = PROVEEDORES.length;
         document.getElementById('dashKpiRA').textContent = r.ra;
+        renderAnalisisCobertura(r);
 
         const labels = PROVEEDORES;
         const values = labels.map(p => r.promProveedor[p] ?? 0);
@@ -2486,84 +2583,119 @@
         }
 
         try {
-            // Asegura que el dashboard esté completamente renderizado.
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-            const canvas = await html2canvas(dashboard, {
-                scale: Math.min(2, window.devicePixelRatio || 1.5),
-                useCORS: true,
-                backgroundColor: '#ffffff',
-                logging: false,
-                scrollX: 0,
-                scrollY: -window.scrollY
-            });
 
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageW = 210;
+            const pageH = 297;
+            const margin = 8;
+            const usableW = pageW - margin * 2;
+            const usableH = pageH - margin * 2;
 
             const mesSeleccionado = document.getElementById('monthInput').value || getMesActual();
             const [año, mes] = mesSeleccionado.split('-');
             const nombreMes = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(mes) - 1];
 
-            const margen = 8;
-            const anchoPagina = 210;
-            const anchoUtil = anchoPagina - margen * 2;
-            const escala = anchoUtil / canvas.width;
-            const altoImagen = canvas.height * escala;
+            // Cada bloque del dashboard se captura como una unidad completa.
+            // Esto evita que la matriz quede partida entre dos hojas.
+            async function agregarElementoCompleto(elemento, titulo, primeraPagina = false) {
+                if (!elemento) return;
+                if (!primeraPagina) pdf.addPage();
 
-            pdf.setFontSize(14);
-            pdf.setFont(undefined, 'bold');
-            pdf.text('DASHBOARD DE CUMPLIMIENTO', anchoPagina / 2, 8, { align: 'center' });
+                pdf.setFontSize(13);
+                pdf.setFont(undefined, 'bold');
+                pdf.setTextColor(44,62,80);
+                pdf.text(titulo, pageW / 2, 9, { align: 'center' });
+                pdf.setFontSize(7);
+                pdf.setFont(undefined, 'normal');
+                pdf.setTextColor(100,110,125);
+                pdf.text(`Período: ${nombreMes} ${año} | Zona: ${zonaSeleccionada}`, pageW / 2, 13, { align: 'center' });
 
-            pdf.setFontSize(8);
-            pdf.setFont(undefined, 'normal');
-            pdf.text(`Período: ${nombreMes} ${año} | Zona: ${zonaSeleccionada}`, anchoPagina / 2, 13, { align: 'center' });
+                const canvas = await html2canvas(elemento, {
+                    scale: Math.min(2, window.devicePixelRatio || 1.5),
+                    useCORS: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                    scrollX: 0,
+                    scrollY: -window.scrollY,
+                    width: elemento.scrollWidth,
+                    height: elemento.scrollHeight,
+                    windowWidth: Math.max(document.documentElement.clientWidth, elemento.scrollWidth),
+                    windowHeight: Math.max(window.innerHeight, elemento.scrollHeight)
+                });
 
-            let y = 17;
-            let altoRestante = altoImagen;
-            let posicion = 0;
+                const top = 17;
+                const availableH = pageH - top - margin;
+                const scale = Math.min(usableW / canvas.width, availableH / canvas.height);
+                const imgW = canvas.width * scale;
+                const imgH = canvas.height * scale;
+                const x = margin + (usableW - imgW) / 2;
+                pdf.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', x, top, imgW, imgH, undefined, 'FAST');
+            }
 
-            // Divide automáticamente el dashboard en páginas A4.
-            while (altoRestante > 0) {
-                if (posicion > 0) pdf.addPage();
+            // Página 1: encabezado, KPIs y análisis inicial.
+            const kpis = dashboard.querySelector('.dash-kpis');
+            const providerPanel = dashboard.querySelector('.dash-grid .dash-panel:nth-child(1)');
+            const analysisPanel = dashboard.querySelector('.dash-grid .coverage-analysis-panel');
+            const primeraPagina = document.createElement('div');
+            primeraPagina.style.cssText = 'background:#fff;width:100%;padding:0;margin:0;';
+            [kpis, providerPanel, analysisPanel].forEach(el => { if (el) primeraPagina.appendChild(el.cloneNode(true)); });
+            // Los clones conservan el contenido renderizado; los canvas se reemplazan por imágenes para capturar los gráficos.
+            const originales = [providerPanel, analysisPanel];
+            const clones = primeraPagina.querySelectorAll('.dash-panel');
+            clones.forEach((cl, idx) => {
+                const orig = originales[idx];
+                if (!orig) return;
+                const origCanvases = orig.querySelectorAll('canvas');
+                const cloneCanvases = cl.querySelectorAll('canvas');
+                origCanvases.forEach((oc, j) => {
+                    const cc = cloneCanvases[j];
+                    if (!cc) return;
+                    const img = document.createElement('img');
+                    img.src = oc.toDataURL('image/png');
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                    img.style.objectFit = 'contain';
+                    cc.replaceWith(img);
+                });
+            });
+            document.body.appendChild(primeraPagina);
+            primeraPagina.style.position = 'absolute';
+            primeraPagina.style.left = '-100000px';
+            primeraPagina.style.top = '0';
+            await agregarElementoCompleto(primeraPagina, 'DASHBOARD DE CUMPLIMIENTO', true);
+            primeraPagina.remove();
 
-                const altoPaginaDisponible = 270;
-                const altoSegmento = Math.min(altoPaginaDisponible, altoRestante);
+            // Página 2: ranking + evolución.
+            const rankingPanel = dashboard.querySelector('.dash-grid .dash-panel.full:nth-of-type(3)') || dashboard.querySelector('#coverageRanking')?.closest('.dash-panel');
+            const trendPanel = dashboard.querySelector('#dashboardTrendChart')?.closest('.dash-panel');
+            const pagina2 = document.createElement('div');
+            pagina2.style.cssText = 'background:#fff;width:100%;';
+            [rankingPanel, trendPanel].forEach(el => { if (el) pagina2.appendChild(el.cloneNode(true)); });
+            const originals2 = [rankingPanel, trendPanel];
+            pagina2.querySelectorAll('.dash-panel').forEach((cl, idx) => {
+                const orig = originals2[idx];
+                if (!orig) return;
+                orig.querySelectorAll('canvas').forEach((oc,j)=>{
+                    const cc=cl.querySelectorAll('canvas')[j];
+                    if (!cc) return;
+                    const img=document.createElement('img'); img.src=oc.toDataURL('image/png'); img.style.width='100%'; img.style.height='100%'; img.style.objectFit='contain'; cc.replaceWith(img);
+                });
+            });
+            document.body.appendChild(pagina2); pagina2.style.position='absolute'; pagina2.style.left='-100000px'; pagina2.style.top='0';
+            await agregarElementoCompleto(pagina2, 'RANKING Y EVOLUCIÓN', false);
+            pagina2.remove();
 
-                // Para evitar recortes, generamos un canvas de segmento.
-                const segmento = document.createElement('canvas');
-                segmento.width = canvas.width;
-                segmento.height = Math.max(1, Math.round(altoSegmento / escala));
-
-                const ctx = segmento.getContext('2d');
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, segmento.width, segmento.height);
-                ctx.drawImage(
-                    canvas,
-                    0,
-                    Math.round(posicion / escala),
-                    canvas.width,
-                    segmento.height,
-                    0,
-                    0,
-                    canvas.width,
-                    segmento.height
-                );
-
-                const img = segmento.toDataURL('image/png', 1.0);
-                pdf.addImage(
-                    img,
-                    'PNG',
-                    margen,
-                    posicion === 0 ? y : 8,
-                    anchoUtil,
-                    segmento.height * escala,
-                    undefined,
-                    'FAST'
-                );
-
-                posicion += altoSegmento;
-                altoRestante -= altoSegmento;
+            // Página siguiente EXCLUSIVA para la matriz. Nunca se comparte con el bloque anterior.
+            const matrixPanel = dashboard.querySelector('#dashboardHeatmapHead')?.closest('.dash-panel');
+            if (matrixPanel) {
+                const paginaMatriz = document.createElement('div');
+                paginaMatriz.style.cssText = 'background:#fff;width:100%;';
+                paginaMatriz.appendChild(matrixPanel.cloneNode(true));
+                document.body.appendChild(paginaMatriz); paginaMatriz.style.position='absolute'; paginaMatriz.style.left='-100000px'; paginaMatriz.style.top='0';
+                await agregarElementoCompleto(paginaMatriz, 'MATRIZ SUCURSAL × PROVEEDOR', false);
+                paginaMatriz.remove();
             }
 
             pdf.save(`Dashboard_${obtenerNombreArchivoVista()}.pdf`);
@@ -2686,13 +2818,13 @@
                 const c = ws.getCell(filaCob + 1, i + 1); c.value = v; c.font = { bold:true, color:{argb:'FFFFFFFF'} }; c.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF2C3E50'}};
             });
             const rankingCobExcel = obtenerRankingCobertura().sort((a,b) => {
-                const ga = a.evaluados >= 4 ? 0 : 1;
-                const gb = b.evaluados >= 4 ? 0 : 1;
+                const ga = a.evaluados >= 3 ? 0 : 1;
+                const gb = b.evaluados >= 3 ? 0 : 1;
                 return (ga-gb) || (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal);
             });
             rankingCobExcel.forEach((x,i) => {
                 const rr = filaCob + 2 + i;
-                ws.getCell(rr,1).value = x.evaluados >= 4 ? '4 a 6 proveedores' : '1 a 3 proveedores';
+                ws.getCell(rr,1).value = x.evaluados >= 3 ? '3 a 5 proveedores' : '1 a 2 proveedores';
                 ws.getCell(rr,2).value = x.sucursal;
                 ws.getCell(rr,3).value = x.evaluados;
                 ws.getCell(rr,4).value = x.cobertura / 100; ws.getCell(rr,4).numFmt = '0%';
