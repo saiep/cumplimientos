@@ -191,6 +191,20 @@
         .admin-access { margin: 4px 0 12px; text-align: right; }
         .admin-access button { border: 0; background: transparent; color: #7f8c8d; font-size: .78em; cursor: pointer; padding: 5px 8px; }
         .admin-access button:hover { color: #2c3e50; text-decoration: underline; }
+        .admin-exit {
+            display:none;
+            border:1px solid #e74c3c;
+            background:#fff5f5;
+            color:#c0392b;
+            border-radius:8px;
+            font-size:.78em;
+            font-weight:700;
+            cursor:pointer;
+            padding:7px 12px;
+        }
+        .admin-exit:hover { background:#fdecec; }
+        body.admin-mode .admin-exit { display:inline-block !important; }
+        body.admin-mode #btnAdminAccess { display:none !important; }
         .public-note { text-align:center; margin:-4px 0 12px; font-size:.78em; color:#7f8c8d; }
         /* ── CARGA INICIAL ── */
         #initialLoading {
@@ -650,6 +664,18 @@
         .coverage-row .pos { font-weight:800; color:#7f8c8d; }
         .coverage-row .score { text-align:right; font-weight:800; }
         .coverage-empty { padding:14px; color:#999; font-size:.82em; text-align:center; }
+        .coverage-note { margin-top:10px; font-size:.75em; color:#7f8c8d; }
+        .observations-panel { background:#fff; }
+        .dashboard-observaciones { margin-top:12px; padding:14px 16px; border:1px solid #f1df9b; border-left:4px solid #f0b429; border-radius:10px; background:#fffdf3; }
+        .dashboard-observaciones-title { font-weight:800; color:#3b4652; margin-bottom:10px; }
+        .dashboard-observacion-item { margin:7px 0; padding-left:4px; color:#394552; font-size:.88em; line-height:1.45; }
+        .dashboard-observacion-item strong { color:#1f2937; }
+        .dashboard-observaciones-empty { color:#7b8794; font-size:.84em; }
+
+        @media (max-width:900px){ .coverage-ranking{grid-template-columns:repeat(2,minmax(0,1fr));} }
+        @media (max-width:600px){ .coverage-ranking{grid-template-columns:1fr;} .coverage-row{grid-template-columns:38px 1fr 52px;} }
+
+
         .coverage-analysis-panel { min-height: 100%; }
         .coverage-analysis { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
         .coverage-analysis-cards { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
@@ -670,12 +696,21 @@
         .coverage-insight strong { color:#263746; }
         @media (max-width:900px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} }
         @media (max-width:600px){ .coverage-analysis-cards{grid-template-columns:1fr 1fr;} .coverage-bar-row{grid-template-columns:105px 1fr 38px;} }
-        .coverage-note { margin-top:10px; font-size:.75em; color:#7f8c8d; }
-        @media (max-width:900px){ .coverage-ranking{grid-template-columns:repeat(2,minmax(0,1fr));} }
-        @media (max-width:600px){ .coverage-ranking{grid-template-columns:1fr;} .coverage-row{grid-template-columns:38px 1fr 52px;} }
 
+.coverage-ranking-head{display:grid;grid-template-columns:58px 1fr 130px;gap:10px;padding:8px 10px;font-size:11px;font-weight:800;color:#667085;background:#f8fafc;border-bottom:1px solid #e5e7eb;text-transform:none}.coverage-ranking-head span:last-child{text-align:right}.coverage-row{grid-template-columns:58px 1fr 130px}.coverage-row .score{text-align:right}.coverage-row small{display:block;margin-top:2px;font-size:10px;font-weight:500;color:#667085;line-height:1.2}@media(max-width:600px){.coverage-ranking-head{grid-template-columns:42px 1fr 105px}.coverage-row{grid-template-columns:42px 1fr 105px}}
 </style>
 <!-- Versión final: conexión Sheets robusta + diagnóstico + PDF con columnas parejas -->
+<style>
+    .file-icon-mail { display:inline-flex; align-items:center; justify-content:center; min-width:38px; height:26px; padding:0 7px; border-radius:5px; background:#7b1fa2; color:#fff; font-size:.72em; font-weight:800; letter-spacing:.03em; }
+    .mail-preview { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:10000; padding:18px; }
+    .mail-preview-box { background:#fff; width:min(760px,96vw); max-height:90vh; overflow:auto; border-radius:14px; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,.35); }
+    .mail-preview-box h3 { margin:0 0 8px; color:#2c3e50; }
+    .mail-preview-meta { background:#f5f7fb; border:1px solid #e3e7ef; border-radius:8px; padding:10px 12px; margin:12px 0; font-size:.9em; }
+    .mail-preview textarea { width:100%; min-height:310px; box-sizing:border-box; padding:13px; border:1px solid #d8dce8; border-radius:8px; font:14px/1.5 Segoe UI,sans-serif; resize:vertical; }
+    .mail-preview-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    @media(max-width:600px){ .mail-preview-actions button{flex:1; min-width:140px;} }
+</style>
+
 </head>
 <body>
 <div id="initialLoading">
@@ -735,7 +770,8 @@
     </div>
 
     <div class="admin-access">
-        <button type="button" onclick="activarModoAdmin()">🔐 Acceso administrador</button>
+        <button type="button" id="btnAdminAccess" onclick="activarModoAdmin()">🔐 Acceso administrador</button>
+        <button type="button" id="btnAdminExit" class="admin-exit" onclick="salirModoAdmin()">🔓 Salir de Admin</button>
     </div>
 
     <div id="loading" class="loading" style="display:none;">
@@ -803,10 +839,15 @@
                 <div id="coverageAnalysis"></div>
             </div>
             <div class="dash-panel full">
-                <h3>🏆 Ranking de sucursales por cobertura</h3>
-                <div class="sub">Las sucursales se comparan dentro de su grupo según la cantidad de proveedores efectivamente evaluados.</div>
+                <h3>🏆 Ranking de sucursales</h3>
+                <div class="sub">Las sucursales se agrupan según la cantidad de proveedores con actividad.</div>
                 <div id="coverageRanking" class="coverage-ranking"></div>
                 <div class="coverage-note">Dentro de cada grupo, el orden se determina por % de cumplimiento. RA y N/R no se consideran proveedores evaluados.</div>
+            </div>
+            <div class="dash-panel full observations-panel">
+                <h3>📌 Observaciones</h3>
+                <div class="sub">Sucursales que no registran pedidos de uno o más proveedores, excluyendo RA y referencias no disponibles.</div>
+                <div id="dashboardObservaciones" class="dashboard-observaciones"></div>
             </div>
             <div class="dash-panel full">
                 <h3>📈 Evolución mensual</h3>
@@ -932,7 +973,7 @@
 
     const SUCURSALES_NO_DISPONIBLE = { '254': ['CCU','DANONE','MASTELLONE'] };
 
-    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzFqlqtyCQ0h0eCOfw3G5XQIunyazkFV6lL8WfnBGLPeCXwjivC-iAqXGuVp5ycfYQBUA/exec';
+    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzFqlqtyCQ0h0eCOfw3G5XQIunyazkFV6lL8WfnBGLPeCXwjivC-iAqXGuVp5ycfYQBUA/exec';    
     let DASHBOARD_DATA_CACHE = null;
 
     // ── Conexión robusta con Google Apps Script ──
@@ -971,7 +1012,7 @@
     // ── Lecturas GET optimizadas mediante JSONP ──
     // Evita el 404 que puede producir el redireccionamiento de Apps Script
     // a googleusercontent.com cuando se consulta desde GitHub Pages.
-    function jsonpGet(url, timeoutMs = 20000) {
+    function jsonpGet(url, timeoutMs = 15000) {
         return new Promise((resolve, reject) => {
             const callbackName = '__saiep_jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
             const script = document.createElement('script');
@@ -1406,10 +1447,30 @@
         if (clave === 'admin2026') {
             modoAdmin = true;
             document.body.classList.add('admin-mode');
+            const btnSalir = document.getElementById('btnAdminExit');
+            const btnAcceso = document.getElementById('btnAdminAccess');
+            if (btnSalir) btnSalir.style.display = 'inline-block';
+            if (btnAcceso) btnAcceso.style.display = 'none';
             alert('✅ Modo administrador activado.');
         } else {
             alert('❌ Contraseña incorrecta.');
         }
+    }
+
+    function salirModoAdmin() {
+        modoAdmin = false;
+        document.body.classList.remove('admin-mode');
+
+        // Cerramos cualquier ventana administrativa abierta, sin borrar datos.
+        const modalRA = document.getElementById('modalRA');
+        const modalZonas = document.getElementById('modalZonas');
+        if (modalRA) modalRA.style.display = 'none';
+        if (modalZonas) modalZonas.style.display = 'none';
+
+        const btnSalir = document.getElementById('btnAdminExit');
+        const btnAcceso = document.getElementById('btnAdminAccess');
+        if (btnSalir) btnSalir.style.display = 'none';
+        if (btnAcceso) btnAcceso.style.display = 'inline-block';
     }
 
     function getMesActual() {
@@ -1550,6 +1611,10 @@
         archivosSeleccionados = [];
         actualizarListaArchivos();
         document.getElementById('loading').style.display = 'none';
+
+        // Al finalizar la carga de órdenes, dejamos siempre la pantalla en Tabla detallada.
+        actualizarPanelRA();
+        mostrarTablaVista();
     }
 
     async function procesarUnPDF(archivo) {
@@ -1832,39 +1897,31 @@
     // CONEXIÓN ROBUSTA CON GOOGLE SHEETS
     // ════════════════════════════════════════════════════
     async function cargarPaqueteDashboard(mes, intentoActual = 1, maxIntentos = 3) {
-        const mensajes = [
-            ['⏳ Conectando con Google Sheets', 'Consultando la información del dashboard...'],
-            ['🔄 Cargando últimos datos', 'La conexión está tardando un poco. Estamos reintentando automáticamente...'],
-            ['🔄 Verificando conexión', 'Estamos obteniendo los últimos datos disponibles. No es necesario hacer nada.']
-        ];
-
-        const mensaje = mensajes[Math.min(intentoActual - 1, mensajes.length - 1)];
-        actualizarEstadoCarga(mensaje[0], mensaje[1]);
-
         try {
-            const url = `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mes)}`;
-            const datos = await jsonpGet(url, 20000);
+            actualizarEstadoCarga(
+                '⏳ Conectando con Google Sheets',
+                intentoActual === 1
+                    ? 'Consultando la información del dashboard...'
+                    : `Reintentando conexión... intento ${intentoActual} de ${maxIntentos}`
+            );
 
-            if (!datos || datos.error) {
-                throw new Error(datos?.error || 'Google Apps Script devolvió una respuesta vacía.');
-            }
+            const datos = await jsonpGet(
+                `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mes)}`,
+                30000
+            );
 
             aplicarPaqueteDashboard(datos);
             return DASHBOARD_DATA_CACHE;
-
         } catch (error) {
             console.warn(`⚠️ Falló el intento ${intentoActual} de ${maxIntentos}:`, error);
 
             if (intentoActual < maxIntentos) {
                 const espera = intentoActual * 1500;
-
                 actualizarEstadoCarga(
-                    '🔄 Cargando últimos datos',
-                    `Estamos reintentando la conexión automáticamente. Intento ${intentoActual + 1} de ${maxIntentos}...`
+                    '🔄 Reintentando conexión',
+                    `Google Sheets no respondió. Nuevo intento en ${Math.ceil(espera / 1000)} segundo${espera === 1000 ? '' : 's'}...`
                 );
-
                 await new Promise(resolve => setTimeout(resolve, espera));
-
                 return cargarPaqueteDashboard(mes, intentoActual + 1, maxIntentos);
             }
 
@@ -1895,9 +1952,9 @@
 
             if (esCargaInicial) {
                 mostrarErrorCargaInicial(
-                    'No fue posible obtener los datos después de los reintentos automáticos. ' +
+                    'No fue posible obtener los datos después de varios intentos. ' +
                     (error.message || '') +
-                    ' Podés volver a intentar la conexión.'
+                    ' Podés volver a intentar sin recargar la página.'
                 );
             } else {
                 alert('⚠️ No se pudieron cargar los datos del período.\n\n' + error.message);
@@ -1922,12 +1979,12 @@
 
     async function reintentarConexionSheets() {
         const mes = document.getElementById('monthInput').value || getMesActual();
-
         mostrarCargaInicial(
-            '🔄 Cargando últimos datos',
+            '🔄 Reintentando conexión',
             'Volviendo a consultar Google Sheets. No es necesario recargar la página.'
         );
 
+        // Si el intento anterior quedó con una respuesta parcial, forzamos una nueva consulta.
         DASHBOARD_DATA_CACHE = null;
 
         const ok = await cargarDatosGoogleSheets(true);
@@ -2226,32 +2283,53 @@
             alert('❌ No se pudo cargar el componente de captura de pantalla.');
             return;
         }
+
         const textoOriginal = boton ? boton.innerHTML : '';
-        if (boton) { boton.disabled = true; boton.innerHTML = '⏳ Generando captura…'; }
+        if (boton) {
+            boton.disabled = true;
+            boton.innerHTML = '⏳ Generando captura…';
+        }
+
         try {
+            // Damos un instante para asegurar que gráficos, ranking, evolución y matriz
+            // hayan terminado de renderizarse antes de tomar la captura.
             await new Promise(resolve => setTimeout(resolve, 500));
+
             const canvas = await html2canvas(dashboard, {
                 scale: Math.min(2, window.devicePixelRatio || 1.5),
-                useCORS: true, backgroundColor: '#ffffff', logging: false,
-                scrollX: 0, scrollY: -window.scrollY,
-                width: dashboard.scrollWidth, height: dashboard.scrollHeight,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                scrollX: 0,
+                scrollY: -window.scrollY,
+                width: dashboard.scrollWidth,
+                height: dashboard.scrollHeight,
                 windowWidth: Math.max(document.documentElement.clientWidth, dashboard.scrollWidth),
                 windowHeight: Math.max(window.innerHeight, dashboard.scrollHeight)
             });
+
             const mes = document.getElementById('monthInput')?.value || 'periodo';
             const zona = String(zonaSeleccionada || 'zona').replace(/[\\/:*?"<>|]/g, '-');
             const nombre = `Dashboard_${mes}_${zona}.png`;
-            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-            if (!blob) throw new Error('No se pudo generar la imagen.');
-            const enlace = document.createElement('a');
-            enlace.href = URL.createObjectURL(blob); enlace.download = nombre;
-            document.body.appendChild(enlace); enlace.click(); enlace.remove();
-            setTimeout(() => URL.revokeObjectURL(enlace.href), 1000);
+
+            canvas.toBlob(blob => {
+                if (!blob) throw new Error('No se pudo generar la imagen.');
+                const enlace = document.createElement('a');
+                enlace.href = URL.createObjectURL(blob);
+                enlace.download = nombre;
+                document.body.appendChild(enlace);
+                enlace.click();
+                enlace.remove();
+                setTimeout(() => URL.revokeObjectURL(enlace.href), 1000);
+            }, 'image/png');
         } catch (error) {
             console.error('❌ Error capturando Dashboard:', error);
             alert('❌ No se pudo generar la captura del Dashboard.\n\n' + error.message);
         } finally {
-            if (boton) { boton.disabled = false; boton.innerHTML = textoOriginal; }
+            if (boton) {
+                boton.disabled = false;
+                boton.innerHTML = textoOriginal;
+            }
         }
     }
 
@@ -2367,16 +2445,16 @@
         if (!cont) return;
         const ranking = obtenerRankingCobertura();
         const grupos = [
-            { min: 3, max: 5, titulo: '🟢 3 a 5 proveedores', subtitulo: 'Cobertura alta' },
-            { min: 1, max: 2, titulo: '🟠 1 a 2 proveedores', subtitulo: 'Cobertura baja' }
+            { min: 3, max: 5, titulo: '🟢 3 a 5 proveedores' },
+            { min: 1, max: 2, titulo: '🟠 1 a 2 proveedores' }
         ];
         cont.innerHTML = grupos.map(g => {
             const rows = ranking
                 .filter(x => x.evaluados >= g.min && x.evaluados <= g.max)
                 .sort((a,b) => (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal));
-            const maxProveedores = PROVEEDORES.length || 1;
-            const rangoCobertura = `${Math.round(g.min/maxProveedores*100)}% a ${Math.min(100, Math.round(g.max/maxProveedores*100))}% de cobertura`;
-            return `<div class="coverage-group"><div class="coverage-group-head">${g.titulo}</div><div class="coverage-group-sub">${g.subtitulo} · ${rangoCobertura}</div>${rows.length ? rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b><br><small>${x.evaluados} proveedor${x.evaluados===1?'':'es'} evaluados</small></span><span class="score">${x.cumplimiento}%</span></div>`).join('') : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
+            return `<div class="coverage-group"><div class="coverage-group-head">${g.titulo}</div>${rows.length ? `
+                <div class="coverage-ranking-head"><span>Top</span><span>Sucursal</span><span>% Cumplimiento</span></div>
+                ${rows.map((x,i) => `<div class="coverage-row"><span class="pos">#${i+1}</span><span><b>${x.sucursal}</b><small>${x.evaluados} ${x.evaluados === 1 ? 'proveedor evaluado' : 'proveedores evaluados'}</small></span><span class="score">${x.cumplimiento}%</span></div>`).join('')}` : '<div class="coverage-empty">Sin sucursales</div>'}</div>`;
         }).join('');
     }
 
@@ -2387,7 +2465,6 @@
         const total = sucursales.length;
         const totalProv = PROVEEDORES.length || 1;
         let altos = [], bajos = [];
-
         sucursales.forEach(s => {
             let evaluados = 0, suma = 0;
             PROVEEDORES.forEach(p => {
@@ -2395,35 +2472,21 @@
                 const esRA = (SUCURSALES_RA[p] || []).includes(s);
                 if (esND || esRA) return;
                 const c = cumplimientoDeDato(datosConsolidados[s]?.[p]);
-                if (c !== null && Number.isFinite(Number(c))) {
-                    evaluados++;
-                    suma += Number(c);
-                }
+                if (c !== null && Number.isFinite(Number(c))) { evaluados++; suma += Number(c); }
             });
             if (!evaluados) return;
-            const item = { s, evaluados, cumplimiento: Math.round(suma / evaluados) };
+            const item = {s, evaluados, cumplimiento: Math.round(suma/evaluados)};
             (evaluados >= 3 ? altos : bajos).push(item);
         });
-
-        const promedio = arr => arr.length ? Math.round(arr.reduce((a,x)=>a+x.cumplimiento,0) / arr.length) : null;
-        const pAltos = promedio(altos);
-        const pBajos = promedio(bajos);
-        const nAltos = altos.length;
-        const nBajos = bajos.length;
-        const pctAltos = total ? Math.round(nAltos / total * 100) : 0;
-        const pctBajos = total ? Math.round(nBajos / total * 100) : 0;
-        const raTotal = PROVEEDORES.reduce((n,p) => n + (SUCURSALES_RA[p] || []).filter(s => sucursales.includes(s)).length, 0);
+        const promedio = arr => arr.length ? Math.round(arr.reduce((a,x)=>a+x.cumplimiento,0)/arr.length) : null;
+        const pAltos = promedio(altos), pBajos = promedio(bajos);
+        const nAltos = altos.length, nBajos = bajos.length;
+        const pctAltos = total ? Math.round(nAltos/total*100) : 0;
+        const pctBajos = total ? Math.round(nBajos/total*100) : 0;
+        const raTotal = PROVEEDORES.reduce((n,p)=>n + (SUCURSALES_RA[p] || []).filter(s=>sucursales.includes(s)).length,0);
         const posibles = total * totalProv;
-        const evaluaciones = altos.reduce((n,x)=>n+x.evaluados,0) + bajos.reduce((n,x)=>n+x.evaluados,0);
-        const coberturaReal = posibles ? Math.round((evaluaciones / posibles) * 100) : 0;
-
-        let insight = 'La cobertura permite contextualizar el porcentaje de cumplimiento antes de comparar sucursales.';
-        if (pAltos !== null && pBajos !== null) {
-            if (pBajos > pAltos) insight = `Las sucursales de <strong>menor cantidad de proveedores</strong> promedian ${pBajos}%, por encima del ${pAltos}% de las de mayor cantidad de proveedores. Conviene interpretar ese resultado junto con la cantidad de proveedores evaluados.`;
-            else if (pAltos > pBajos) insight = `Las sucursales de <strong>mayor cantidad de proveedores</strong> promedian ${pAltos}%, superando el ${pBajos}% del grupo de menor cantidad de proveedores. El resultado es más consistente al estar respaldado por una mayor cantidad de proveedores.`;
-            else insight = `Ambos grupos promedian <strong>${pAltos}%</strong>. La diferencia principal está en la amplitud de cobertura de proveedores.`;
-        }
-
+        const coberturaReal = posibles ? Math.round(((altos.reduce((n,x)=>n+x.evaluados,0)+bajos.reduce((n,x)=>n+x.evaluados,0))/posibles)*100) : 0;
+        const insight = 'El porcentaje de cumplimiento debe leerse junto con la cantidad de proveedores evaluados. Por eso, el ranking compara por separado las sucursales con 1–2 y con 3–5 proveedores.';
         cont.innerHTML = `
             <div class="coverage-analysis">
                 <div class="coverage-analysis-cards">
@@ -2449,6 +2512,41 @@
                 </div>
                 <div class="coverage-insight"><strong>💡 Lectura:</strong> ${insight}</div>
             </div>`;
+    }
+
+    function renderObservacionesDashboard() {
+        const cont = document.getElementById('dashboardObservaciones');
+        if (!cont) return;
+        const sucursales = obtenerSucursalesZonaDashboard();
+        const observaciones = [];
+
+        sucursales.forEach(suc => {
+            const faltantes = [];
+            PROVEEDORES.forEach(prov => {
+                const esND = SUCURSALES_NO_DISPONIBLE[suc]?.includes(prov);
+                const esRA = (SUCURSALES_RA[prov] || []).includes(suc);
+                if (esND || esRA) return;
+                const dato = datosConsolidados[suc]?.[prov];
+                if (!dato) faltantes.push(prov);
+            });
+            if (faltantes.length) observaciones.push({ suc, faltantes });
+        });
+
+        if (!observaciones.length) {
+            cont.innerHTML = '<div class="dashboard-observaciones-empty">✅ No se detectaron observaciones de pedidos faltantes para las sucursales de la zona seleccionada.</div>';
+            return;
+        }
+
+        const lista = observaciones.map(o => {
+            const proveedores = o.faltantes.length === 1
+                ? o.faltantes[0]
+                : o.faltantes.length === 2
+                    ? `${o.faltantes[0]} y ${o.faltantes[1]}`
+                    : `${o.faltantes.slice(0,-1).join(', ')} y ${o.faltantes[o.faltantes.length-1]}`;
+            return `<div class="dashboard-observacion-item">- <strong>Sucursal ${o.suc}:</strong> No se registran pedidos de <strong>${proveedores}</strong>.</div>`;
+        }).join('');
+
+        cont.innerHTML = `<div class="dashboard-observaciones-title">Atender las siguientes observaciones, por favor:</div>${lista}`;
     }
 
     function actualizarDashboardActual() {
@@ -2486,6 +2584,7 @@
         }
 
         renderRankingCobertura();
+        renderObservacionesDashboard();
 
         const head = document.getElementById('dashboardHeatmapHead');
         const body = document.getElementById('dashboardHeatmapBody');
@@ -2578,561 +2677,244 @@
     }
 
     // ════════════════════════════════════════════════════
-    // EXPORTAR EXCEL
-    // ════════════════════════════════════════════════════
-
-    // ════════════════════════════════════════════════════
     // EXPORTACIONES SEGÚN LA VISTA ACTUAL
     // ════════════════════════════════════════════════════
 
     function obtenerNombreArchivoVista() {
-        const mesSeleccionado = document.getElementById('monthInput').value || getMesActual();
+        const mes = document.getElementById('monthInput')?.value || getMesActual();
         const zona = String(zonaSeleccionada || 'Zona').replace(/[\\/:*?"<>|]/g, '-');
-        return `${mesSeleccionado}_${zona}`;
-    }
-
-    function actualizarBotonesExportacionSeguro() {
-        if (typeof actualizarBotonesExportacion === 'function') {
-            actualizarBotonesExportacion();
-        }
-    }
-
-    async function exportarPDF() {
-        if (vistaActual === 'dashboard') {
-            await exportarPDFDashboard();
-        } else {
-            await exportarPDFTabla();
-        }
+        return `${mes}_${zona}`;
     }
 
     async function exportarExcel() {
-        if (vistaActual === 'dashboard') {
-            await exportarExcelDashboard();
-        } else {
-            await exportarExcelTabla();
-        }
-    }
-
-    async function exportarPDFDashboard() {
-        const dashboard = document.getElementById('dashboardView');
-        if (!dashboard) {
-            alert('No se encontró el Dashboard para exportar.');
-            return;
-        }
-
-        const btn = document.getElementById('btnPDF');
-        const textoOriginal = btn ? btn.textContent : '';
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = '⏳ Generando Dashboard...';
-        }
+        const btn = document.getElementById('btnExcel');
+        const original = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Generando Excel…'; }
 
         try {
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            if (typeof ExcelJS === 'undefined') throw new Error('ExcelJS no está disponible. Verifique la conexión a Internet.');
+            if (typeof saveAs === 'undefined') throw new Error('FileSaver no está disponible.');
 
-            const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('l', 'mm', 'a4');
-            const pageW = 297;
-            const pageH = 210;
-            const margin = 8;
-            const usableW = pageW - margin * 2;
-            const usableH = pageH - margin * 2;
+            const workbook = new ExcelJS.Workbook();
+            workbook.creator = 'SAIEP';
+            workbook.company = 'La Anónima';
+            workbook.subject = 'Dashboard de cumplimiento';
+            workbook.title = `Dashboard ${obtenerNombreArchivoVista()}`;
+            workbook.created = new Date();
 
-            const mesSeleccionado = document.getElementById('monthInput').value || getMesActual();
-            const [año, mes] = mesSeleccionado.split('-');
-            const nombreMes = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(mes) - 1];
+            const mes = document.getElementById('monthInput')?.value || getMesActual();
+            const zona = String(zonaSeleccionada || 'Zona');
+            const resumen = resumenDashboardActual();
+            const sucursales = obtenerSucursalesZonaDashboard();
 
-            function encabezado(titulo) {
-                pdf.setFontSize(13);
-                pdf.setFont(undefined, 'bold');
-                pdf.setTextColor(44,62,80);
-                pdf.text(titulo, pageW / 2, 7, { align: 'center' });
-                pdf.setFontSize(7);
-                pdf.setFont(undefined, 'normal');
-                pdf.setTextColor(100,110,125);
-                pdf.text(`Período: ${nombreMes} ${año} | Zona: ${zonaSeleccionada}`, pageW / 2, 11, { align: 'center' });
+            const fill = (argb) => ({ type:'pattern', pattern:'solid', fgColor:{argb} });
+            const border = { top:{style:'thin',color:{argb:'FFE5E7EB'}}, bottom:{style:'thin',color:{argb:'FFE5E7EB'}}, left:{style:'thin',color:{argb:'FFE5E7EB'}}, right:{style:'thin',color:{argb:'FFE5E7EB'}} };
+            const headerStyle = { font:{bold:true,color:{argb:'FFFFFFFF'}}, fill:fill('FF2C3E50'), alignment:{horizontal:'center',vertical:'middle'}, border };
+            const titleStyle = { font:{bold:true,size:18,color:{argb:'FFFFFFFF'}}, fill:fill('FF2C3E50'), alignment:{horizontal:'center',vertical:'middle'} };
+
+            function setSectionTitle(ws, row, text, lastCol=6) {
+                ws.mergeCells(row,1,row,lastCol);
+                const c=ws.getCell(row,1); c.value=text; c.font={bold:true,size:12,color:{argb:'FF243447'}}; c.fill=fill('FFEAF0F7'); c.alignment={vertical:'middle'};
+                ws.getRow(row).height=22;
+            }
+            function addCanvasImage(ws, canvasId, tl, br) {
+                const canvas=document.getElementById(canvasId);
+                if (!canvas || typeof canvas.toDataURL !== 'function') return;
+                try {
+                    const imageId=workbook.addImage({base64:canvas.toDataURL('image/png',1.0),extension:'png'});
+                    ws.addImage(imageId, {tl, br});
+                } catch(e) { console.warn('No se pudo insertar gráfico',canvasId,e); }
+            }
+            function estiloTabla(ws, startRow, endRow, startCol, endCol) {
+                for(let r=startRow;r<=endRow;r++) for(let c=startCol;c<=endCol;c++) ws.getCell(r,c).border=border;
             }
 
-            async function capturarElemento(elemento) {
-                return await html2canvas(elemento, {
-                    scale: 2,
-                    useCORS: true,
-                    backgroundColor: '#ffffff',
-                    logging: false,
-                    scrollX: 0,
-                    scrollY: -window.scrollY,
-                    width: elemento.scrollWidth,
-                    height: elemento.scrollHeight,
-                    windowWidth: Math.max(document.documentElement.clientWidth, elemento.scrollWidth),
-                    windowHeight: Math.max(window.innerHeight, elemento.scrollHeight)
+            // ───────────── DASHBOARD ─────────────
+            const ws=workbook.addWorksheet('Dashboard');
+            ws.columns=[{width:24},{width:17},{width:17},{width:17},{width:17},{width:17},{width:17},{width:17}];
+            ws.mergeCells('A1:H1'); ws.getCell('A1').value='DASHBOARD DE CUMPLIMIENTO'; Object.assign(ws.getCell('A1'),titleStyle); ws.getRow(1).height=30;
+            ws.mergeCells('A2:H2'); ws.getCell('A2').value=`Período: ${mes}  |  Zona: ${zona}`; ws.getCell('A2').alignment={horizontal:'center'}; ws.getCell('A2').font={italic:true,color:{argb:'FF667085'}};
+
+            const kpis=[['CUMPLIMIENTO GLOBAL',Number(resumen.promGlobal||0)/100,'0%'],['PEDIDOS',Number(resumen.pedidos||0),'#,##0'],['SUCURSALES',sucursales.length,'0'],['PROVEEDORES',PROVEEDORES.length,'0'],['RA ACTIVAS',Number(resumen.ra||0),'0']];
+            kpis.forEach((k,i)=>{ const c=ws.getCell(4,i+1); c.value=k[0]; c.font={bold:true,size:9,color:{argb:'FF667085'}}; c.fill=fill('FFF3F6FA'); c.alignment={horizontal:'center'}; const v=ws.getCell(5,i+1); v.value=k[1]; v.numFmt=k[2]; v.font={bold:true,size:17,color:{argb:'FF243447'}}; v.fill=fill('FFF8FAFC'); v.alignment={horizontal:'center'}; ws.getCell(4,i+1).border=border; v.border=border; });
+
+            setSectionTitle(ws,7,'📊 Cumplimiento por proveedor',8);
+            ws.getCell('A8').value='Proveedor'; ws.getCell('B8').value='Cumplimiento'; ws.getRow(8).eachCell({includeEmpty:false},c=>Object.assign(c,headerStyle));
+            PROVEEDORES.forEach((p,i)=>{const r=9+i; const v=Number(resumen.promProveedor?.[p]); ws.getCell(r,1).value=p; ws.getCell(r,2).value=Number.isFinite(v)?v/100:'-'; if(Number.isFinite(v))ws.getCell(r,2).numFmt='0%'; ws.getCell(r,1).border=border; ws.getCell(r,2).border=border; ws.getCell(r,2).alignment={horizontal:'center'};});
+            addCanvasImage(ws,'dashboardProviderChart',{col:3,row:7},{col:8,row:19});
+
+            setSectionTitle(ws,21,'📈 Análisis de cobertura y desempeño',8);
+            let altos=0,bajos=0,pAltos=0,pBajos=0;
+            sucursales.forEach(s=>{let n=0,sum=0;PROVEEDORES.forEach(p=>{if(SUCURSALES_NO_DISPONIBLE[s]?.includes(p)||(SUCURSALES_RA[p]||[]).includes(s))return;const c=cumplimientoDeDato(datosConsolidados[s]?.[p]);if(c!==null&&Number.isFinite(Number(c))){n++;sum+=Number(c);}});if(n){if(n>=3){altos++;pAltos+=Math.round(sum/n)}else{bajos++;pBajos+=Math.round(sum/n)}}});
+            const totalSuc=sucursales.length||1;
+            ws.addRow(['Grupo','Sucursales','% del total','Cumplimiento promedio']);
+            ws.getRow(22).eachCell(c=>Object.assign(c,headerStyle));
+            ws.addRow(['3 a 5 proveedores',altos,altos/totalSuc,pAltos/(altos||1)/100]); ws.addRow(['1 a 2 proveedores',bajos,bajos/totalSuc,pBajos/(bajos||1)/100]);
+            [23,24].forEach(r=>{ws.getCell(r,3).numFmt='0%';ws.getCell(r,4).numFmt='0%';}); estiloTabla(ws,22,24,1,4);
+            ws.addRow([]); ws.addRow(['Proveedores con actividad', (function(){let n=0,t=sucursales.length*PROVEEDORES.length;sucursales.forEach(s=>PROVEEDORES.forEach(p=>{if(SUCURSALES_NO_DISPONIBLE[s]?.includes(p)||(SUCURSALES_RA[p]||[]).includes(s))return;const c=cumplimientoDeDato(datosConsolidados[s]?.[p]);if(c!==null)n++;}));return t?Math.round(n/t*100)/100:0})()]); ws.getCell(26,2).numFmt='0%';
+
+            // ───────────── RANKING ─────────────
+            const wr=workbook.addWorksheet('Ranking'); wr.columns=[{width:12},{width:18},{width:20},{width:16},{width:18},{width:16}];
+            wr.mergeCells('A1:F1');wr.getCell('A1').value='RANKING DE SUCURSALES POR COBERTURA';Object.assign(wr.getCell('A1'),titleStyle);wr.getRow(1).height=30;
+            wr.mergeCells('A2:F2');wr.getCell('A2').value=`Período: ${mes} | Zona: ${zona}`;wr.getCell('A2').alignment={horizontal:'center'};
+            const ranking=obtenerRankingCobertura();
+            wr.addRow([]); wr.addRow(['Grupo','Pos.','Sucursal','Proveedores evaluados','Cobertura','Cumplimiento']); wr.getRow(4).eachCell(c=>Object.assign(c,headerStyle));
+            let posA=0,posB=0; ranking.forEach(x=>{const alto=x.evaluados>=3; alto?posA++:posB++;wr.addRow([alto?'3 a 5 proveedores':'1 a 2 proveedores',alto?posA:posB,x.sucursal,x.evaluados,x.cobertura/100,x.cumplimiento/100]);});
+            for(let r=5;r<=wr.rowCount;r++){wr.getCell(r,5).numFmt='0%';wr.getCell(r,6).numFmt='0%';wr.getRow(r).eachCell(c=>c.border=border);}
+            wr.autoFilter={from:'A4',to:`F${wr.rowCount}`};wr.views=[{state:'frozen',ySplit:4}];
+
+            // ───────────── MATRIZ ─────────────
+            const wm=workbook.addWorksheet('Matriz');wm.columns=[{width:14},...PROVEEDORES.map(()=>({width:16}))];
+            wm.mergeCells(1,1,1,PROVEEDORES.length+1);wm.getCell(1,1).value='MATRIZ SUCURSAL × PROVEEDOR';Object.assign(wm.getCell(1,1),titleStyle);wm.getRow(1).height=30;
+            wm.addRow(['Sucursal',...PROVEEDORES]);wm.getRow(2).eachCell(c=>Object.assign(c,headerStyle));
+            sucursales.forEach((s)=>{const row=wm.addRow([s]);PROVEEDORES.forEach((p,i)=>{const c=row.getCell(i+2);const nd=SUCURSALES_NO_DISPONIBLE[s]?.includes(p);const ra=(SUCURSALES_RA[p]||[]).includes(s);const v=cumplimientoDeDato(datosConsolidados[s]?.[p]);if(nd){c.value='N/R';c.fill=fill('FFF3F4F6');}else if(ra){c.value='RA';c.fill=fill('FFE3F2FD');c.font={bold:true,color:{argb:'FF1565C0'}};}else if(v!==null&&Number.isFinite(Number(v))){c.value=Number(v)/100;c.numFmt='0%';c.font={bold:true};c.fill=fill(Number(v)>=90?'FFD4EDDA':Number(v)>=75?'FFFFF3CD':'FFF8D7DA');c.font.color={argb:Number(v)>=90?'FF155724':Number(v)>=75?'FF856404':'FF721C24'};}else c.value='-';c.alignment={horizontal:'center'};});});
+            wm.eachRow(r=>r.eachCell(c=>c.border=border));wm.autoFilter={from:'A2',to:`F${wm.rowCount}`};wm.views=[{state:'frozen',ySplit:2}];
+
+            // ───────────── EVOLUCIÓN ─────────────
+            const we=workbook.addWorksheet('Evolución');we.columns=[{width:16},{width:22}];we.mergeCells('A1:H1');we.getCell('A1').value='EVOLUCIÓN MENSUAL';Object.assign(we.getCell('A1'),titleStyle);we.getRow(1).height=30;we.mergeCells('A2:H2');we.getCell('A2').value=`Zona: ${zona}`;we.getCell('A2').alignment={horizontal:'center'};
+            we.addRow([]);we.addRow(['Mes','Cumplimiento global']);we.getRow(4).eachCell(c=>Object.assign(c,headerStyle));
+            if(typeof mesesHistoricoDashboard==='function'&&DASHBOARD_DATA_CACHE){mesesHistoricoDashboard().forEach(m=>{const info=DASHBOARD_DATA_CACHE.meses?.[m];let vals=[];if(info)Object.entries(info.cells||{}).forEach(([key,val])=>{const [s,p]=key.split('|');if(!sucursales.includes(s)||!PROVEEDORES.includes(p)||SUCURSALES_NO_DISPONIBLE[s]?.includes(p)||(SUCURSALES_RA[p]||[]).includes(s))return;const n=Number(val);if(Number.isFinite(n))vals.push(n);});const row=we.addRow([m,vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)/100:'-']);if(vals.length)row.getCell(2).numFmt='0%';});}
+            addCanvasImage(we,'dashboardTrendChart',{col:3,row:3},{col:10,row:20});
+
+            // Formato final
+            [ws,wr,wm,we].forEach(sh=>{sh.eachRow(r=>r.eachCell(c=>{if(!c.fill||c.fill.type!=='pattern') c.fill=fill('FFFFFFFF');}));});
+
+            const buffer=await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Dashboard_${nombreBase}.xlsx`);
+        } catch(error){
+            console.error('❌ Error exportando Excel:',error);
+            alert('❌ No se pudo generar el Excel.\n\n'+(error?.message||error));
+        } finally { if(btn){btn.disabled=false;btn.innerHTML=original;} }
+    }
+
+    async function exportarPDF() {
+        try {
+            if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('No se pudo cargar el componente de exportación PDF.');
+            const nombreBase = obtenerNombreArchivoVista();
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+
+            if (vistaActual === 'dashboard') {
+                const dashboard = document.getElementById('dashboardView');
+                if (!dashboard || dashboard.style.display === 'none') throw new Error('El Dashboard no está visible.');
+                if (typeof html2canvas !== 'function') throw new Error('No se pudo cargar el componente de captura.');
+
+                await new Promise(r => setTimeout(r, 500));
+
+                const pageW = 277, pageH = 190;
+                const margin = 10;
+                const usableW = pageW;
+                const usableH = pageH;
+
+                // Captura un elemento completo y lo ajusta a una página SIN cortarlo.
+                async function agregarElementoCompleto(elemento, nuevaPagina = false) {
+                    if (!elemento) return;
+                    if (nuevaPagina) pdf.addPage();
+
+                    const canvas = await html2canvas(elemento, {
+                        scale: Math.min(2, window.devicePixelRatio || 1.5),
+                        useCORS: true,
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                        scrollX: 0,
+                        scrollY: -window.scrollY,
+                        width: elemento.scrollWidth,
+                        height: elemento.scrollHeight,
+                        windowWidth: Math.max(document.documentElement.clientWidth, elemento.scrollWidth),
+                        windowHeight: Math.max(window.innerHeight, elemento.scrollHeight)
+                    });
+
+                    const escala = Math.min(usableW / canvas.width, usableH / canvas.height);
+                    const imgW = canvas.width * escala;
+                    const imgH = canvas.height * escala;
+                    const x = margin + (usableW - imgW) / 2;
+                    const y = margin + (usableH - imgH) / 2;
+
+                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgW, imgH);
+                }
+
+                // Página 1: encabezado + KPIs + los dos primeros paneles.
+                pdf.setFontSize(18);
+                pdf.setTextColor(44,62,80);
+                pdf.text('Consolidado de Cumplimientos - Dashboard', margin, 14);
+                pdf.setFontSize(9);
+                pdf.setTextColor(100,110,125);
+                const periodo = document.getElementById('dashboardPeriodLabel')?.innerText || nombreBase;
+                pdf.text(periodo, margin, 20);
+
+                const kpis = Array.from(document.querySelectorAll('#dashboardView .dash-kpi'));
+                const kpiY = 26;
+                const kpiW = (usableW - 16) / Math.max(kpis.length, 1);
+                kpis.forEach((kpi, i) => {
+                    const x = margin + i * (kpiW + 4);
+                    pdf.setFillColor(248,249,252);
+                    pdf.setDrawColor(225,229,238);
+                    pdf.roundedRect(x, kpiY, kpiW, 22, 2, 2, 'FD');
+                    const label = kpi.querySelector('.label')?.innerText || '';
+                    const value = kpi.querySelector('.value')?.innerText || '';
+                    pdf.setFontSize(7);
+                    pdf.setTextColor(120,128,142);
+                    pdf.text(label, x + 4, kpiY + 7);
+                    pdf.setFontSize(13);
+                    pdf.setTextColor(44,62,80);
+                    pdf.text(value, x + 4, kpiY + 16);
+                });
+
+                const panels = Array.from(document.querySelectorAll('#dashboardView .dash-panel'));
+                if (!panels.length) throw new Error('No se encontraron los paneles del Dashboard.');
+
+                // Los dos primeros paneles se colocan lado a lado, sin cortar ninguno.
+                const primeros = panels.slice(0, 2);
+                const panelY = 56;
+                const panelGap = 6;
+                const panelW = (usableW - panelGap) / 2;
+                for (let i = 0; i < primeros.length; i++) {
+                    const canvas = await html2canvas(primeros[i], {
+                        scale: Math.min(2, window.devicePixelRatio || 1.5),
+                        useCORS: true,
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                        width: primeros[i].scrollWidth,
+                        height: primeros[i].scrollHeight,
+                        windowWidth: Math.max(document.documentElement.clientWidth, primeros[i].scrollWidth),
+                        windowHeight: Math.max(window.innerHeight, primeros[i].scrollHeight)
+                    });
+                    const escala = Math.min(panelW / canvas.width, (usableH - panelY) / canvas.height);
+                    const imgW = canvas.width * escala;
+                    const imgH = canvas.height * escala;
+                    const x = margin + i * (panelW + panelGap) + (panelW - imgW) / 2;
+                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, panelY, imgW, imgH);
+                }
+
+                // Cada panel restante ocupa una página completa. Así ranking, gráficos,
+                // evolución y matriz nunca se parten en un salto de hoja.
+                for (const panel of panels.slice(2)) {
+                    await agregarElementoCompleto(panel, true);
+                }
+            } else {
+                const table = document.getElementById('tablaConsolidado');
+                if (!table) throw new Error('No se encontró la tabla detallada.');
+                const head = [Array.from(table.querySelectorAll('thead th')).map(th => th.innerText.trim())];
+                const body = Array.from(table.querySelectorAll('tbody tr')).map(tr => Array.from(tr.cells).map(td => td.innerText.trim()));
+                pdf.autoTable({
+                    head, body, startY:20, theme:'grid',
+                    styles:{fontSize:8, halign:'center'},
+                    headStyles:{fillColor:[102,126,234]},
+                    margin:{left:10,right:10}
                 });
             }
 
-            // Coloca el bloque a todo el ancho disponible, manteniendo SIEMPRE
-            // su relación de aspecto. Nunca se lo obliga a entrar en una altura fija.
-            function colocarCanvas(canvas, x, y, maxW) {
-                const escala = maxW / canvas.width;
-                const w = canvas.width * escala;
-                const h = canvas.height * escala;
-                pdf.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', x, y, w, h, undefined, 'FAST');
-                return h;
-            }
-
-            const kpis = dashboard.querySelector('.dash-kpis');
-            const providerPanel = dashboard.querySelector('.dash-grid .dash-panel:nth-child(1)');
-            const analysisPanel = dashboard.querySelector('.dash-grid .coverage-analysis-panel');
-            const rankingPanel = dashboard.querySelector('#coverageRanking')?.closest('.dash-panel');
-            const trendPanel = dashboard.querySelector('#dashboardTrendChart')?.closest('.dash-panel');
-            const matrixPanel = dashboard.querySelector('#dashboardHeatmapHead')?.closest('.dash-panel');
-
-            // ==========================================================
-            // PÁGINA 1 — RESUMEN
-            // KPIs + gráfico de proveedores. Sin deformar ni achatar.
-            // ==========================================================
-            encabezado('DASHBOARD DE CUMPLIMIENTO');
-            let y = 16;
-
-            if (kpis) {
-                const c = await capturarElemento(kpis);
-                y += colocarCanvas(c, margin, y, usableW) + 5;
-            }
-
-            if (providerPanel) {
-                const c = await capturarElemento(providerPanel);
-                colocarCanvas(c, margin, y, usableW);
-            }
-
-            // ==========================================================
-            // PÁGINA 2 — ANÁLISIS + RANKING
-            // Cada bloque usa el ancho completo y conserva proporción.
-            // ==========================================================
-            pdf.addPage();
-            encabezado('ANÁLISIS DE COBERTURA Y RANKING');
-            y = 16;
-
-            if (analysisPanel) {
-                const c = await capturarElemento(analysisPanel);
-                y += colocarCanvas(c, margin, y, usableW) + 6;
-            }
-
-            if (rankingPanel) {
-                const c = await capturarElemento(rankingPanel);
-                colocarCanvas(c, margin, y, usableW);
-            }
-
-            // ==========================================================
-            // PÁGINA 3 — EVOLUCIÓN
-            // Se deja grande para que el gráfico sea legible.
-            // ==========================================================
-            pdf.addPage();
-            encabezado('EVOLUCIÓN MENSUAL');
-            if (trendPanel) {
-                const c = await capturarElemento(trendPanel);
-                colocarCanvas(c, margin, 16, usableW);
-            }
-
-            // ==========================================================
-            // PÁGINA 4 — MATRIZ
-            // Página exclusiva. Nunca se comprime junto con otro bloque.
-            // ==========================================================
-            if (matrixPanel) {
-                pdf.addPage();
-                encabezado('MATRIZ SUCURSAL × PROVEEDOR');
-                const c = await capturarElemento(matrixPanel);
-                colocarCanvas(c, margin, 16, usableW);
-            }
-
-            // Pie de página discreto en todas las páginas.
-            const totalPaginas = pdf.internal.getNumberOfPages();
-            for (let i = 1; i <= totalPaginas; i++) {
-                pdf.setPage(i);
-                pdf.setFontSize(6.5);
-                pdf.setFont(undefined, 'normal');
-                pdf.setTextColor(130,130,130);
-                pdf.text(`Página ${i} de ${totalPaginas}`, pageW - margin, pageH - 3, {align:'right'});
-            }
-
-            pdf.save(`Dashboard_${obtenerNombreArchivoVista()}.pdf`);
-
+            pdf.save(`Consolidado_${nombreBase}.pdf`);
         } catch (error) {
-            console.error('Error exportando Dashboard PDF:', error);
-            alert('❌ No se pudo generar el PDF del Dashboard.\n\n' + error.message);
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = textoOriginal;
-                actualizarBotonesExportacionSeguro();
-            }
+            console.error('❌ Error exportando PDF:', error);
+            alert('❌ No se pudo generar el PDF.\n\n' + error.message);
         }
     }
 
-    async function exportarPDFTabla() {
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('l','mm','a4');
-
-        const mesSeleccionado = document.getElementById('monthInput').value;
-        const [año,mes] = mesSeleccionado.split('-');
-
-        const nombreMes = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(mes)-1];
-
-        doc.setFontSize(16);
-        doc.setFont(undefined,'bold');
-        doc.text('CONSOLIDADO DE CUMPLIMIENTOS',148,12,{align:'center'});
-
-        doc.setFontSize(10);
-        doc.setFont(undefined,'normal');
-        doc.text('Período: '+nombreMes+' '+año+' | Zona: '+zonaSeleccionada,148,18,{align:'center'});
-
-        const sucursalesZona = ZONAS[zonaSeleccionada] || SUCURSALES_SISTEMA;
-        const sucOrdenadas = sucursalesZona.filter(s => SUCURSALES_SISTEMA.includes(s));
-
-        const pxp = {};
-
-        PROVEEDORES.forEach(p => {
-            let tot = 0;
-            let cnt = 0;
-
-            sucOrdenadas.forEach(s => {
-                const d = datosConsolidados[s]?.[p];
-
-                if (d !== undefined) {
-                    const c = (typeof d === 'object')
-                        ? Math.round((d.recibidoTotal / d.pedidoTotal) * 100)
-                        : d;
-
-                    tot += c;
-                    cnt++;
-                }
-            });
-
-            pxp[p] = cnt > 0 ? Math.round(tot/cnt) : 0;
-        });
-
-        const bw=44,bh=26,bs=6,sx=12,by=24;
-
-        PROVEEDORES.forEach((prov,i) => {
-            const c = pxp[prov];
-            const x = sx + (i * (bw + bs));
-
-            let fc,tc;
-
-            if (c >= 90) {
-                fc=[212,237,218]; tc=[21,87,36];
-            } else if (c >= 75) {
-                fc=[255,243,205]; tc=[133,100,4];
-            } else if (c > 0) {
-                fc=[248,215,218]; tc=[114,28,36];
-            } else {
-                fc=[233,236,239]; tc=[108,117,125];
-            }
-
-            doc.setFillColor(fc[0],fc[1],fc[2]);
-            doc.roundedRect(x,by,bw,bh,5,5,'F');
-
-            doc.setFontSize(7);
-            doc.setFont(undefined,'normal');
-            doc.setTextColor(tc[0],tc[1],tc[2]);
-            doc.text(prov,x+bw/2,by+6,{align:'center'});
-
-            doc.setFontSize(16);
-            doc.setFont(undefined,'bold');
-            doc.text(c+'%',x+bw/2,by+18,{align:'center'});
-        });
-
-        const ly = by+bh+8;
-
-        [
-            {color:[212,237,218],tc:[21,87,36],label:'90-100% Excelente'},
-            {color:[255,243,205],tc:[133,100,4],label:'75-89% Bueno'},
-            {color:[248,215,218],tc:[114,28,36],label:'0-74% Regular'},
-            {color:[227,242,253],tc:[21,101,192],label:'RA Reposición Asistida'},
-            {color:[245,245,245],tc:[158,158,158],label:'N/R No Recibe'}
-        ].forEach((item,i) => {
-            const x = 45 + (i * 38);
-
-            doc.setFillColor(item.color[0],item.color[1],item.color[2]);
-            doc.rect(x,ly,5,5,'F');
-
-            doc.setDrawColor(item.tc[0],item.tc[1],item.tc[2]);
-            doc.setLineWidth(0.3);
-            doc.rect(x,ly,5,5,'S');
-
-            doc.setFontSize(7);
-            doc.setFont(undefined,'normal');
-            doc.setTextColor(60,60,60);
-            doc.text(item.label,x+7,ly+3.5);
-        });
-
-        const rows = sucOrdenadas.map(suc => {
-            const fila = [suc];
-
-            PROVEEDORES.forEach(prov => {
-                const esND = SUCURSALES_NO_DISPONIBLE[suc]?.includes(prov);
-                const esRA = (SUCURSALES_RA[prov] || []).includes(suc);
-
-                if (esND) {
-                    fila.push('N/R');
-                } else if (esRA) {
-                    fila.push('RA');
-                } else {
-                    const d = datosConsolidados[suc]?.[prov];
-                    const c = d
-                        ? Math.round((d.recibidoTotal/d.pedidoTotal) * 100)
-                        : undefined;
-
-                    fila.push(c !== undefined ? c+'%' : '-');
-                }
-            });
-
-            return fila;
-        });
-
-        doc.autoTable({
-            head:[['Sucursal','CCU','QUILMES','COCA COLA','DANONE','MASTELLONE']],
-            body:rows,
-            startY:66,
-            theme:'grid',
-            margin:{left:16,right:16},
-            tableWidth:265,
-            headStyles:{
-                fillColor:[102,126,234],
-                textColor:255,
-                fontStyle:'bold',
-                halign:'center'
-            },
-            bodyStyles:{
-                halign:'center',
-                fontSize:9
-            },
-            columnStyles:{
-                0:{fontStyle:'bold',halign:'center',cellWidth:30},
-                1:{cellWidth:47},
-                2:{cellWidth:47},
-                3:{cellWidth:47},
-                4:{cellWidth:47},
-                5:{cellWidth:47}
-            },
-            didParseCell:function(data) {
-                if (data.section==='body' && data.column.index>0) {
-                    const v = data.cell.raw;
-
-                    if (v==='N/R') {
-                        data.cell.styles.fillColor=[245,245,245];
-                        data.cell.styles.textColor=[158,158,158];
-                    } else if (v==='RA') {
-                        data.cell.styles.fillColor=[227,242,253];
-                        data.cell.styles.textColor=[21,101,192];
-                    } else if (v!=='-') {
-                        const n=parseInt(v);
-
-                        if (n>=90) {
-                            data.cell.styles.fillColor=[212,237,218];
-                            data.cell.styles.textColor=[21,87,36];
-                            data.cell.styles.fontStyle='bold';
-                        } else if (n>=75) {
-                            data.cell.styles.fillColor=[255,243,205];
-                            data.cell.styles.textColor=[133,100,4];
-                            data.cell.styles.fontStyle='bold';
-                        } else {
-                            data.cell.styles.fillColor=[248,215,218];
-                            data.cell.styles.textColor=[114,28,36];
-                            data.cell.styles.fontStyle='bold';
-                        }
-                    } else {
-                        data.cell.styles.fillColor=[233,236,239];
-                        data.cell.styles.textColor=[108,117,125];
-                    }
-                }
-            }
-        });
-
-        const pc = doc.internal.getNumberOfPages();
-
-        for(let i=1;i<=pc;i++) {
-            doc.setPage(i);
-            doc.setFontSize(8);
-            doc.setTextColor(128);
-            doc.text('Página '+i+' de '+pc,148,200,{align:'center'});
-            doc.text('Generado: '+new Date().toLocaleString('es-AR'),148,205,{align:'center'});
-        }
-
-        doc.save('Consolidado_'+año+'_'+mes+'_'+zonaSeleccionada+'.pdf');
+    function actualizarBotonesExportacionSeguro() {
+        if (typeof actualizarBotonesExportacion === 'function') actualizarBotonesExportacion();
     }
 
-    // ════════════════════════════════════════════════════
-    // BORRAR / LIMPIAR
-    // ════════════════════════════════════════════════════
-    async function borrarDatosCargados() {
-        const sucursalesConDatos = Object.keys(datosConsolidados)
-            .filter(suc => Object.keys(datosConsolidados[suc]).length > 0)
-            .sort();
-
-        if (sucursalesConDatos.length === 0) {
-            alert('⚠️ No hay datos para borrar');
-            return;
-        }
-
-        const modalHTML = `
-            <div id="modalBorrar" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;">
-                <div style="background:white;padding:30px;border-radius:15px;box-shadow:0 10px 40px rgba(0,0,0,0.3);max-width:500px;width:90%;">
-                    <h2 style="color:#2c3e50;margin-bottom:20px;text-align:center;">🗑️ Borrar Datos</h2>
-
-                    <div style="margin-bottom:15px;">
-                        <label style="font-weight:bold;color:#2c3e50;display:block;margin-bottom:5px;">Sucursal:</label>
-                        <select id="selectSucursal" style="width:100%;padding:8px;border:2px solid #667eea;border-radius:5px;font-size:1em;">
-                            <option value="">-- Seleccione Sucursal --</option>
-                            ${sucursalesConDatos.map(s=>`<option value="${s}">${s}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <div style="margin-bottom:20px;">
-                        <label style="font-weight:bold;color:#2c3e50;display:block;margin-bottom:5px;">Proveedor:</label>
-                        <select id="selectProveedor" style="width:100%;padding:8px;border:2px solid #667eea;border-radius:5px;font-size:1em;" disabled>
-                            <option value="">-- Primero seleccione sucursal --</option>
-                        </select>
-                    </div>
-
-                    <div style="display:flex;gap:10px;justify-content:center;">
-                        <button onclick="ejecutarBorrado()" id="btnConfirmarBorrado" style="padding:12px 30px;background:#e74c3c;color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer;opacity:0.5;" disabled>🗑️ Borrar</button>
-                        <button onclick="cerrarModalBorrar()" style="padding:12px 30px;background:#95a5a6;color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer;">❌ Cancelar</button>
-                    </div>
-                </div>
-            </div>`;
-
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-
-        document.getElementById('selectSucursal').addEventListener('change', function() {
-            const suc = this.value;
-            const sp = document.getElementById('selectProveedor');
-
-            if (suc) {
-                sp.disabled = false;
-                sp.innerHTML =
-                    '<option value="">-- Seleccione Proveedor --</option>' +
-                    Object.keys(datosConsolidados[suc])
-                        .map(p=>`<option value="${p}">${p}</option>`)
-                        .join('');
-            } else {
-                sp.disabled = true;
-                sp.innerHTML = '<option value="">-- Primero seleccione sucursal --</option>';
-
-                document.getElementById('btnConfirmarBorrado').disabled = true;
-                document.getElementById('btnConfirmarBorrado').style.opacity = '0.5';
-            }
-        });
-
-        document.getElementById('selectProveedor').addEventListener('change', function() {
-            const btn = document.getElementById('btnConfirmarBorrado');
-            btn.disabled = !this.value;
-            btn.style.opacity = this.value ? '1' : '0.5';
-        });
-    }
-
-    function cerrarModalBorrar() {
-        const m = document.getElementById('modalBorrar');
-        if (m) m.remove();
-    }
-
-    async function ejecutarBorrado() {
-        const suc = document.getElementById('selectSucursal').value;
-        const prov = document.getElementById('selectProveedor').value;
-        const mes = document.getElementById('monthInput').value;
-
-        if (!suc || !prov) {
-            alert('⚠️ Seleccione sucursal y proveedor');
-            return;
-        }
-
-        if (!confirm(`¿Borrar datos de:\nSucursal: ${suc}\nProveedor: ${prov}\nMes: ${mes}?`)) {
-            return;
-        }
-
-        if (datosConsolidados[suc]?.[prov]) {
-            delete datosConsolidados[suc][prov];
-        }
-
-        const clave = `${suc}-${prov}`;
-
-        if (ordenesProceadas[clave]) {
-            delete ordenesProceadas[clave];
-        }
-
-        try {
-            const fd = new URLSearchParams();
-
-            fd.append('action','delete_specific');
-            fd.append('mes',mes);
-            fd.append('sucursal',parseInt(suc));
-            fd.append('proveedor',prov);
-
-            const result = await fetchJSON(GOOGLE_SHEETS_URL,{
-                method:'POST',
-                body:fd
-            });
-
-            if (result.success) {
-                alert(`✅ Datos borrados:\nSucursal ${suc} - ${prov}\n${result.eliminados} registro(s) eliminado(s)`);
-                cerrarModalBorrar();
-                generarTabla();
-            } else {
-                alert('⚠️ Error al borrar de Google Sheets');
-            }
-        } catch(e) {
-            console.error(e);
-            alert('❌ Error de conexión');
-        }
-    }
-
-    async function limpiarConClave() {
-        const clave = prompt('🔐 Contraseña de administrador:');
-
-        if (clave === 'admin2026') {
-            const mes = document.getElementById('monthInput').value;
-            const sucursalesZona = ZONAS[zonaSeleccionada];
-
-            if (confirm(`¿Limpiar todos los datos de ${zonaSeleccionada} del mes ${mes}?\n\n⚠️ ESTA ACCIÓN NO SE PUEDE DESHACER`)) {
-                try {
-                    sucursalesZona.forEach(suc => {
-                        datosConsolidados[suc] = {};
-
-                        PROVEEDORES.forEach(p => {
-                            const k = `${suc}-${p}`;
-                            if (ordenesProceadas[k]) {
-                                delete ordenesProceadas[k];
-                            }
-                        });
-                    });
-
-                    const fd = new URLSearchParams();
-
-                    fd.append('action','delete_zone');
-                    fd.append('mes',mes);
-                    fd.append('sucursales',JSON.stringify(sucursalesZona.map(s=>parseInt(s))));
-
-                    const resp = await fetch(GOOGLE_SHEETS_URL,{
-                        method:'POST',
-                        body:fd
-                    });
-
-                    const result = await resp.json();
-
-                    alert(
-                        result.success
-                            ? `✅ ${result.eliminados} registros eliminados`
-                            : '⚠️ Datos locales limpiados, error en Sheets'
-                    );
-
-                    generarTabla();
-                } catch(e) {
-                    console.error(e);
-                    alert('⚠️ Error de conexión');
-                    generarTabla();
-                }
-            }
-        } else if (clave !== null) {
-            alert('❌ Contraseña incorrecta');
-        }
-    }
 </script>
 </body>
 </html>
