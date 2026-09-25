@@ -2586,9 +2586,10 @@
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pageW = 210;
-            const pageH = 297;
+            // A4 apaisado: evita comprimir demasiado el dashboard y aprovecha mejor el ancho.
+            const pdf = new jsPDF('l', 'mm', 'a4');
+            const pageW = 297;
+            const pageH = 210;
             const margin = 8;
             const usableW = pageW - margin * 2;
             const usableH = pageH - margin * 2;
@@ -2597,22 +2598,19 @@
             const [año, mes] = mesSeleccionado.split('-');
             const nombreMes = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(mes) - 1];
 
-            // Cada bloque del dashboard se captura como una unidad completa.
-            // Esto evita que la matriz quede partida entre dos hojas.
-            async function agregarElementoCompleto(elemento, titulo, primeraPagina = false) {
-                if (!elemento) return;
-                if (!primeraPagina) pdf.addPage();
-
+            function encabezado(titulo) {
                 pdf.setFontSize(13);
                 pdf.setFont(undefined, 'bold');
                 pdf.setTextColor(44,62,80);
-                pdf.text(titulo, pageW / 2, 9, { align: 'center' });
+                pdf.text(titulo, pageW / 2, 7, { align: 'center' });
                 pdf.setFontSize(7);
                 pdf.setFont(undefined, 'normal');
                 pdf.setTextColor(100,110,125);
-                pdf.text(`Período: ${nombreMes} ${año} | Zona: ${zonaSeleccionada}`, pageW / 2, 13, { align: 'center' });
+                pdf.text(`Período: ${nombreMes} ${año} | Zona: ${zonaSeleccionada}`, pageW / 2, 11, { align: 'center' });
+            }
 
-                const canvas = await html2canvas(elemento, {
+            async function capturarElemento(elemento) {
+                return await html2canvas(elemento, {
                     scale: Math.min(2, window.devicePixelRatio || 1.5),
                     useCORS: true,
                     backgroundColor: '#ffffff',
@@ -2624,78 +2622,75 @@
                     windowWidth: Math.max(document.documentElement.clientWidth, elemento.scrollWidth),
                     windowHeight: Math.max(window.innerHeight, elemento.scrollHeight)
                 });
-
-                const top = 17;
-                const availableH = pageH - top - margin;
-                const scale = Math.min(usableW / canvas.width, availableH / canvas.height);
-                const imgW = canvas.width * scale;
-                const imgH = canvas.height * scale;
-                const x = margin + (usableW - imgW) / 2;
-                pdf.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', x, top, imgW, imgH, undefined, 'FAST');
             }
 
-            // Página 1: encabezado, KPIs y análisis inicial.
+            function colocarCanvas(canvas, x, y, maxW, maxH) {
+                const escala = Math.min(maxW / canvas.width, maxH / canvas.height);
+                const w = canvas.width * escala;
+                const h = canvas.height * escala;
+                pdf.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', x + (maxW - w) / 2, y, w, h, undefined, 'FAST');
+                return h;
+            }
+
+            // ─────────────────────────────────────────────
+            // PÁGINA 1: KPIs + proveedor + análisis
+            // Se capturan por separado para conservar proporciones.
+            // ─────────────────────────────────────────────
+            encabezado('DASHBOARD DE CUMPLIMIENTO');
+
             const kpis = dashboard.querySelector('.dash-kpis');
             const providerPanel = dashboard.querySelector('.dash-grid .dash-panel:nth-child(1)');
             const analysisPanel = dashboard.querySelector('.dash-grid .coverage-analysis-panel');
-            const primeraPagina = document.createElement('div');
-            primeraPagina.style.cssText = 'background:#fff;width:100%;padding:0;margin:0;';
-            [kpis, providerPanel, analysisPanel].forEach(el => { if (el) primeraPagina.appendChild(el.cloneNode(true)); });
-            // Los clones conservan el contenido renderizado; los canvas se reemplazan por imágenes para capturar los gráficos.
-            const originales = [providerPanel, analysisPanel];
-            const clones = primeraPagina.querySelectorAll('.dash-panel');
-            clones.forEach((cl, idx) => {
-                const orig = originales[idx];
-                if (!orig) return;
-                const origCanvases = orig.querySelectorAll('canvas');
-                const cloneCanvases = cl.querySelectorAll('canvas');
-                origCanvases.forEach((oc, j) => {
-                    const cc = cloneCanvases[j];
-                    if (!cc) return;
-                    const img = document.createElement('img');
-                    img.src = oc.toDataURL('image/png');
-                    img.style.width = '100%';
-                    img.style.height = '100%';
-                    img.style.objectFit = 'contain';
-                    cc.replaceWith(img);
-                });
-            });
-            document.body.appendChild(primeraPagina);
-            primeraPagina.style.position = 'absolute';
-            primeraPagina.style.left = '-100000px';
-            primeraPagina.style.top = '0';
-            await agregarElementoCompleto(primeraPagina, 'DASHBOARD DE CUMPLIMIENTO', true);
-            primeraPagina.remove();
 
-            // Página 2: ranking + evolución.
-            const rankingPanel = dashboard.querySelector('.dash-grid .dash-panel.full:nth-of-type(3)') || dashboard.querySelector('#coverageRanking')?.closest('.dash-panel');
+            let y = 16;
+            if (kpis) {
+                const c = await capturarElemento(kpis);
+                const h = colocarCanvas(c, margin, y, usableW, 25);
+                y += h + 4;
+            }
+
+            if (providerPanel) {
+                const c = await capturarElemento(providerPanel);
+                const h = colocarCanvas(c, margin, y, usableW, 105);
+                y += h + 4;
+            }
+
+            if (analysisPanel) {
+                const c = await capturarElemento(analysisPanel);
+                colocarCanvas(c, margin, y, usableW, Math.max(usableH - y, 35));
+            }
+
+            // ─────────────────────────────────────────────
+            // PÁGINA 2: ranking + evolución
+            // ─────────────────────────────────────────────
+            pdf.addPage();
+            encabezado('RANKING Y EVOLUCIÓN');
+
+            const rankingPanel = dashboard.querySelector('#coverageRanking')?.closest('.dash-panel');
             const trendPanel = dashboard.querySelector('#dashboardTrendChart')?.closest('.dash-panel');
-            const pagina2 = document.createElement('div');
-            pagina2.style.cssText = 'background:#fff;width:100%;';
-            [rankingPanel, trendPanel].forEach(el => { if (el) pagina2.appendChild(el.cloneNode(true)); });
-            const originals2 = [rankingPanel, trendPanel];
-            pagina2.querySelectorAll('.dash-panel').forEach((cl, idx) => {
-                const orig = originals2[idx];
-                if (!orig) return;
-                orig.querySelectorAll('canvas').forEach((oc,j)=>{
-                    const cc=cl.querySelectorAll('canvas')[j];
-                    if (!cc) return;
-                    const img=document.createElement('img'); img.src=oc.toDataURL('image/png'); img.style.width='100%'; img.style.height='100%'; img.style.objectFit='contain'; cc.replaceWith(img);
-                });
-            });
-            document.body.appendChild(pagina2); pagina2.style.position='absolute'; pagina2.style.left='-100000px'; pagina2.style.top='0';
-            await agregarElementoCompleto(pagina2, 'RANKING Y EVOLUCIÓN', false);
-            pagina2.remove();
+            y = 16;
 
-            // Página siguiente EXCLUSIVA para la matriz. Nunca se comparte con el bloque anterior.
+            if (rankingPanel) {
+                const c = await capturarElemento(rankingPanel);
+                const h = colocarCanvas(c, margin, y, usableW, 75);
+                y += h + 5;
+            }
+
+            if (trendPanel) {
+                const c = await capturarElemento(trendPanel);
+                colocarCanvas(c, margin, y, usableW, Math.max(usableH - y, 45));
+            }
+
+            // ─────────────────────────────────────────────
+            // PÁGINA 3: matriz exclusiva
+            // Nunca se comparte página con otro bloque.
+            // ─────────────────────────────────────────────
             const matrixPanel = dashboard.querySelector('#dashboardHeatmapHead')?.closest('.dash-panel');
             if (matrixPanel) {
-                const paginaMatriz = document.createElement('div');
-                paginaMatriz.style.cssText = 'background:#fff;width:100%;';
-                paginaMatriz.appendChild(matrixPanel.cloneNode(true));
-                document.body.appendChild(paginaMatriz); paginaMatriz.style.position='absolute'; paginaMatriz.style.left='-100000px'; paginaMatriz.style.top='0';
-                await agregarElementoCompleto(paginaMatriz, 'MATRIZ SUCURSAL × PROVEEDOR', false);
-                paginaMatriz.remove();
+                pdf.addPage();
+                encabezado('MATRIZ SUCURSAL × PROVEEDOR');
+                const c = await capturarElemento(matrixPanel);
+                colocarCanvas(c, margin, 16, usableW, usableH - 16);
             }
 
             pdf.save(`Dashboard_${obtenerNombreArchivoVista()}.pdf`);
@@ -2712,278 +2707,6 @@
         }
     }
 
-    async function exportarExcelDashboard() {
-        const btn = document.getElementById('btnExcel');
-        const textoOriginal = btn ? btn.textContent : '';
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = '⏳ Generando Dashboard...';
-        }
-
-        try {
-            const resumen = resumenDashboardActual();
-            const workbook = new ExcelJS.Workbook();
-
-            // Hoja 1: Resumen del Dashboard
-            const ws = workbook.addWorksheet('Dashboard');
-            ws.columns = [
-                { width: 26 }, { width: 18 }, { width: 18 }, { width: 18 },
-                { width: 18 }, { width: 18 }
-            ];
-
-            ws.views = [{ state: 'frozen', ySplit: 4 }];
-            ws.mergeCells('A1:F1');
-            ws.getCell('A1').value = 'DASHBOARD DE CUMPLIMIENTO';
-            ws.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
-            ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
-            ws.getCell('A1').alignment = { horizontal: 'center' };
-
-            ws.mergeCells('A2:F2');
-            ws.getCell('A2').value = `Período: ${document.getElementById('monthInput').value} | Zona: ${zonaSeleccionada}`;
-            ws.getCell('A2').alignment = { horizontal: 'center' };
-
-            // IMPORTANTE: usar exactamente la estructura que devuelve
-            // resumenDashboardActual(). Evita valores undefined/NaN que
-            // pueden generar celdas inválidas y provocar que Excel repare
-            // la hoja al abrir el archivo.
-            const kpis = [
-                ['Cumplimiento global', Number(resumen.promGlobal || 0) / 100],
-                ['Pedidos', Number(resumen.pedidos || 0)],
-                ['Sucursales', Array.isArray(resumen.sucursales) ? resumen.sucursales.length : 0],
-                ['Proveedores', PROVEEDORES.length],
-                ['RA activas', Number(resumen.ra || 0)]
-            ];
-
-            ws.getCell('A4').value = 'KPIs';
-            ws.getCell('A4').font = { bold: true, size: 12 };
-
-            kpis.forEach((item, i) => {
-                ws.getCell(5 + i, 1).value = item[0];
-                ws.getCell(5 + i, 2).value = item[1];
-                if (i === 0) ws.getCell(5 + i, 2).numFmt = '0%';
-            });
-
-            // Proveedores
-            const filaProv = 12;
-            ws.getCell(filaProv, 1).value = 'Cumplimiento por proveedor';
-            ws.getCell(filaProv, 1).font = { bold: true, size: 12 };
-            ['Proveedor', 'Cumplimiento'].forEach((v, i) => {
-                const c = ws.getCell(filaProv + 1, i + 1);
-                c.value = v;
-                c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
-            });
-
-            const proveedores = PROVEEDORES.map(proveedor => ({
-                proveedor,
-                valor: resumen.promProveedor && resumen.promProveedor[proveedor] != null
-                    ? Number(resumen.promProveedor[proveedor])
-                    : null
-            }));
-            proveedores.forEach((p, i) => {
-                ws.getCell(filaProv + 2 + i, 1).value = p.proveedor;
-                if (p.valor !== null && Number.isFinite(p.valor)) {
-                    ws.getCell(filaProv + 2 + i, 2).value = p.valor / 100;
-                    ws.getCell(filaProv + 2 + i, 2).numFmt = '0%';
-                } else {
-                    ws.getCell(filaProv + 2 + i, 2).value = '-';
-                }
-            });
-
-            // Ranking de sucursales
-            const filaRanking = filaProv + 4 + proveedores.length;
-            ws.getCell(filaRanking, 1).value = 'Ranking de sucursales';
-            ws.getCell(filaRanking, 1).font = { bold: true, size: 12 };
-            ['Sucursal', 'Cumplimiento'].forEach((v, i) => {
-                const c = ws.getCell(filaRanking + 1, i + 1);
-                c.value = v;
-                c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
-            });
-
-            const ranking = Object.entries(resumen.porSucursal || {})
-                .filter(([, valor]) => valor !== null && valor !== undefined && Number.isFinite(Number(valor)))
-                .sort((a, b) => Number(b[1]) - Number(a[1]));
-            ranking.forEach(([sucursal, valor], i) => {
-                ws.getCell(filaRanking + 2 + i, 1).value = sucursal;
-                ws.getCell(filaRanking + 2 + i, 2).value = Number(valor) / 100;
-                ws.getCell(filaRanking + 2 + i, 2).numFmt = '0%';
-            });
-
-            // Ranking por cobertura de proveedores
-            const filaCob = filaRanking + 3 + ranking.length;
-            ws.getCell(filaCob, 1).value = 'Ranking por cobertura de proveedores';
-            ws.getCell(filaCob, 1).font = { bold: true, size: 12 };
-            ['Grupo', 'Sucursal', 'Proveedores evaluados', 'Cobertura', 'Cumplimiento'].forEach((v, i) => {
-                const c = ws.getCell(filaCob + 1, i + 1); c.value = v; c.font = { bold:true, color:{argb:'FFFFFFFF'} }; c.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF2C3E50'}};
-            });
-            const rankingCobExcel = obtenerRankingCobertura().sort((a,b) => {
-                const ga = a.evaluados >= 3 ? 0 : 1;
-                const gb = b.evaluados >= 3 ? 0 : 1;
-                return (ga-gb) || (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal);
-            });
-            rankingCobExcel.forEach((x,i) => {
-                const rr = filaCob + 2 + i;
-                ws.getCell(rr,1).value = x.evaluados >= 3 ? '3 a 5 proveedores' : '1 a 2 proveedores';
-                ws.getCell(rr,2).value = x.sucursal;
-                ws.getCell(rr,3).value = x.evaluados;
-                ws.getCell(rr,4).value = x.cobertura / 100; ws.getCell(rr,4).numFmt = '0%';
-                ws.getCell(rr,5).value = x.cumplimiento / 100; ws.getCell(rr,5).numFmt = '0%';
-            });
-
-            // Hoja 2: Matriz Sucursal x Proveedor
-            const heat = workbook.addWorksheet('Matriz');
-            heat.columns = [
-                { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 },
-                { width: 14 }, { width: 16 }
-            ];
-
-            const headers = ['Sucursal'].concat(PROVEEDORES);
-            headers.forEach((h, i) => {
-                const c = heat.getCell(1, i + 1);
-                c.value = h;
-                c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
-                c.alignment = { horizontal: 'center' };
-            });
-
-            const sucursales = obtenerSucursalesZonaDashboard();
-            sucursales.forEach((suc, r) => {
-                heat.getCell(r + 2, 1).value = suc;
-                PROVEEDORES.forEach((prov, cidx) => {
-                    const celda = heat.getCell(r + 2, cidx + 2);
-                    const esND = SUCURSALES_NO_DISPONIBLE[suc]?.includes(prov);
-                    const esRA = (SUCURSALES_RA[prov] || []).includes(suc);
-                    const valor = cumplimientoDeDato(datosConsolidados[suc]?.[prov]);
-
-                    if (esND) {
-                        celda.value = 'N/R';
-                    } else if (esRA) {
-                        celda.value = 'RA';
-                    } else if (valor !== null && Number.isFinite(Number(valor))) {
-                        celda.value = Number(valor) / 100;
-                        celda.numFmt = '0%';
-                    } else {
-                        celda.value = '-';
-                    }
-
-                    celda.alignment = { horizontal: 'center' };
-                });
-            });
-
-            const buffer = await workbook.xlsx.writeBuffer();
-            saveAs(
-                new Blob([buffer], {
-                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                }),
-                `Dashboard_${obtenerNombreArchivoVista()}.xlsx`
-            );
-
-        } catch (error) {
-            console.error('Error exportando Dashboard Excel:', error);
-            alert('❌ No se pudo generar el Excel del Dashboard.\n\n' + error.message);
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = textoOriginal;
-                actualizarBotonesExportacionSeguro();
-            }
-        }
-    }
-
-    async function exportarExcelTabla() {
-        const mesSeleccionado = document.getElementById('monthInput').value;
-        const [año, mes] = mesSeleccionado.split('-');
-
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Cumplimientos');
-
-        worksheet.columns = [
-            {width:12},{width:12},{width:12},{width:14},{width:12},{width:14}
-        ];
-
-        worksheet.mergeCells('A1:F1');
-
-        const tit = worksheet.getCell('A1');
-        tit.value = 'CONSOLIDADO DE CUMPLIMIENTOS';
-        tit.font = {bold:true,size:14};
-        tit.alignment = {horizontal:'center'};
-
-        const hRow = worksheet.getRow(3);
-
-        ['Sucursal','CCU','QUILMES','COCA COLA','DANONE','MASTELLONE'].forEach((t,i) => {
-            const c = hRow.getCell(i+1);
-            c.value = t;
-            c.font = {bold:true,color:{argb:'FFFFFFFF'}};
-            c.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF667EEA'}};
-            c.alignment = {horizontal:'center'};
-        });
-
-        const sucursalesZona = ZONAS[zonaSeleccionada] || SUCURSALES_SISTEMA;
-        const sucOrdenadas = sucursalesZona.filter(s => SUCURSALES_SISTEMA.includes(s));
-
-        sucOrdenadas.forEach((suc,idx) => {
-            const fila = worksheet.getRow(4+idx);
-
-            fila.getCell(1).value = suc;
-            fila.getCell(1).font = {bold:true};
-            fila.getCell(1).alignment = {horizontal:'center'};
-
-            PROVEEDORES.forEach((prov,ci) => {
-                const cell = fila.getCell(2+ci);
-                const esND = SUCURSALES_NO_DISPONIBLE[suc]?.includes(prov);
-                const esRA = (SUCURSALES_RA[prov] || []).includes(suc);
-
-                if (esND) {
-                    cell.value = 'N/R';
-                    cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFF5F5F5'}};
-                } else if (esRA) {
-                    cell.value = 'RA';
-                    cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFE3F2FD'}};
-                } else {
-                    const datos = datosConsolidados[suc]?.[prov];
-                    const c = datos
-                        ? Math.round((datos.recibidoTotal / datos.pedidoTotal) * 100)
-                        : undefined;
-
-                    if (c !== undefined) {
-                        cell.value = c / 100;
-                        cell.numFmt = '0%';
-                        cell.font = {bold:true};
-
-                        if (c >= 90) {
-                            cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFD4EDDA'}};
-                            cell.font.color = {argb:'FF155724'};
-                        } else if (c >= 75) {
-                            cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF3CD'}};
-                            cell.font.color = {argb:'FF856404'};
-                        } else {
-                            cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFF8D7DA'}};
-                            cell.font.color = {argb:'FF721C24'};
-                        }
-                    } else {
-                        cell.value = '-';
-                        cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFE9ECEF'}};
-                    }
-                }
-
-                cell.alignment = {horizontal:'center'};
-            });
-        });
-
-        const buffer = await workbook.xlsx.writeBuffer();
-
-        saveAs(
-            new Blob([buffer], {
-                type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            }),
-            `Consolidado_${año}_${mes}_${zonaSeleccionada}.xlsx`
-        );
-    }
-
-    // ════════════════════════════════════════════════════
-    // EXPORTAR PDF
-    // ════════════════════════════════════════════════════
     async function exportarPDFTabla() {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('l','mm','a4');
