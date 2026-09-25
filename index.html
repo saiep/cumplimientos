@@ -2794,7 +2794,10 @@
             if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('No se pudo cargar el componente de exportación PDF.');
             const nombreBase = obtenerNombreArchivoVista();
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+
+            // Dashboard: A4 vertical para aprovechar mejor la hoja y evitar
+            // que bloques cortos terminen solos en una página.
+            const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
 
             if (vistaActual === 'dashboard') {
                 const dashboard = document.getElementById('dashboardView');
@@ -2803,17 +2806,15 @@
 
                 await new Promise(r => setTimeout(r, 500));
 
-                const pageW = 277, pageH = 190;
-                const margin = 10;
-                const usableW = pageW;
-                const usableH = pageH;
+                const pageW = 210;
+                const pageH = 297;
+                const margin = 9;
+                const usableW = pageW - margin * 2;
+                const usableH = pageH - margin * 2;
 
-                // Captura un elemento completo y lo ajusta a una página SIN cortarlo.
-                async function agregarElementoCompleto(elemento, nuevaPagina = false) {
-                    if (!elemento) return;
-                    if (nuevaPagina) pdf.addPage();
-
-                    const canvas = await html2canvas(elemento, {
+                // Captura cada panel completo y lo escala para que NUNCA se corte.
+                async function capturarPanel(elemento) {
+                    return await html2canvas(elemento, {
                         scale: Math.min(2, window.devicePixelRatio || 1.5),
                         useCORS: true,
                         backgroundColor: '#ffffff',
@@ -2825,84 +2826,113 @@
                         windowWidth: Math.max(document.documentElement.clientWidth, elemento.scrollWidth),
                         windowHeight: Math.max(window.innerHeight, elemento.scrollHeight)
                     });
-
-                    const escala = Math.min(usableW / canvas.width, usableH / canvas.height);
-                    const imgW = canvas.width * escala;
-                    const imgH = canvas.height * escala;
-                    const x = margin + (usableW - imgW) / 2;
-                    const y = margin + (usableH - imgH) / 2;
-
-                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgW, imgH);
                 }
 
-                // Página 1: encabezado + KPIs + los dos primeros paneles.
-                pdf.setFontSize(18);
+                function agregarCanvasEnPagina(canvas, y, maxH) {
+                    // Primero usamos todo el ancho disponible; si no entra
+                    // verticalmente, reducimos proporcionalmente.
+                    let escala = usableW / canvas.width;
+                    let imgW = canvas.width * escala;
+                    let imgH = canvas.height * escala;
+                    if (imgH > maxH) {
+                        escala = Math.min(escala, maxH / canvas.height);
+                        imgW = canvas.width * escala;
+                        imgH = canvas.height * escala;
+                    }
+                    const x = margin + (usableW - imgW) / 2;
+                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgW, imgH);
+                    return {imgW, imgH};
+                }
+
+                // Encabezado compacto.
+                let y = margin;
+                pdf.setFontSize(16);
                 pdf.setTextColor(44,62,80);
-                pdf.text('Consolidado de Cumplimientos - Dashboard', margin, 14);
-                pdf.setFontSize(9);
+                pdf.text('Consolidado de Cumplimientos - Dashboard', margin, y + 6);
+                pdf.setFontSize(8);
                 pdf.setTextColor(100,110,125);
                 const periodo = document.getElementById('dashboardPeriodLabel')?.innerText || nombreBase;
-                pdf.text(periodo, margin, 20);
+                pdf.text(periodo, margin, y + 12);
+                y += 17;
 
+                // KPIs en una sola fila compacta.
                 const kpis = Array.from(document.querySelectorAll('#dashboardView .dash-kpi'));
-                const kpiY = 26;
-                const kpiW = (usableW - 16) / Math.max(kpis.length, 1);
+                const kpiGap = 3;
+                const kpiW = (usableW - kpiGap * (kpis.length - 1)) / Math.max(kpis.length, 1);
                 kpis.forEach((kpi, i) => {
-                    const x = margin + i * (kpiW + 4);
+                    const x = margin + i * (kpiW + kpiGap);
                     pdf.setFillColor(248,249,252);
                     pdf.setDrawColor(225,229,238);
-                    pdf.roundedRect(x, kpiY, kpiW, 22, 2, 2, 'FD');
+                    pdf.roundedRect(x, y, kpiW, 19, 2, 2, 'FD');
                     const label = kpi.querySelector('.label')?.innerText || '';
                     const value = kpi.querySelector('.value')?.innerText || '';
-                    pdf.setFontSize(7);
+                    pdf.setFontSize(5.5);
                     pdf.setTextColor(120,128,142);
-                    pdf.text(label, x + 4, kpiY + 7);
-                    pdf.setFontSize(13);
+                    pdf.text(label, x + 2.5, y + 6);
+                    pdf.setFontSize(10.5);
                     pdf.setTextColor(44,62,80);
-                    pdf.text(value, x + 4, kpiY + 16);
+                    pdf.text(value, x + 2.5, y + 14);
                 });
+                y += 24;
 
                 const panels = Array.from(document.querySelectorAll('#dashboardView .dash-panel'));
                 if (!panels.length) throw new Error('No se encontraron los paneles del Dashboard.');
 
-                // Los dos primeros paneles se colocan lado a lado, sin cortar ninguno.
-                const primeros = panels.slice(0, 2);
-                const panelY = 56;
-                const panelGap = 6;
-                const panelW = (usableW - panelGap) / 2;
-                for (let i = 0; i < primeros.length; i++) {
-                    const canvas = await html2canvas(primeros[i], {
-                        scale: Math.min(2, window.devicePixelRatio || 1.5),
-                        useCORS: true,
-                        backgroundColor: '#ffffff',
-                        logging: false,
-                        width: primeros[i].scrollWidth,
-                        height: primeros[i].scrollHeight,
-                        windowWidth: Math.max(document.documentElement.clientWidth, primeros[i].scrollWidth),
-                        windowHeight: Math.max(window.innerHeight, primeros[i].scrollHeight)
-                    });
-                    const escala = Math.min(panelW / canvas.width, (usableH - panelY) / canvas.height);
-                    const imgW = canvas.width * escala;
-                    const imgH = canvas.height * escala;
-                    const x = margin + i * (panelW + panelGap) + (panelW - imgW) / 2;
-                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, panelY, imgW, imgH);
+                // Capturamos todos los paneles antes de maquetar para poder
+                // calcular cuánto ocupa cada uno y aprovechar cada hoja.
+                const capturas = [];
+                for (const panel of panels) {
+                    capturas.push(await capturarPanel(panel));
                 }
 
-                // Cada panel restante ocupa una página completa. Así ranking, gráficos,
-                // evolución y matriz nunca se parten en un salto de hoja.
-                for (const panel of panels.slice(2)) {
-                    await agregarElementoCompleto(panel, true);
+                // Paginación inteligente: agrega tantos paneles completos como
+                // entren en la hoja. Nunca corta un panel entre páginas.
+                for (let i = 0; i < capturas.length; i++) {
+                    const canvas = capturas[i];
+                    const altoDisponible = pageH - margin - y;
+                    let escala = usableW / canvas.width;
+                    let imgH = canvas.height * escala;
+
+                    // Si el panel por sí solo no entra en la hoja, se reduce.
+                    if (imgH > usableH) {
+                        escala = usableH / canvas.height;
+                        imgH = usableH;
+                    }
+
+                    // Si no entra en el espacio restante, nueva hoja.
+                    if (imgH > altoDisponible && y > margin + 25) {
+                        pdf.addPage();
+                        y = margin;
+                        escala = usableW / canvas.width;
+                        imgH = canvas.height * escala;
+                        if (imgH > usableH) {
+                            escala = usableH / canvas.height;
+                            imgH = usableH;
+                        }
+                    }
+
+                    const imgW = canvas.width * escala;
+                    const x = margin + (usableW - imgW) / 2;
+                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, imgW, imgH);
+                    y += imgH + 5;
                 }
             } else {
+                // La tabla detallada continúa en A4 vertical y puede ocupar
+                // varias páginas automáticamente, repitiendo el encabezado.
                 const table = document.getElementById('tablaConsolidado');
                 if (!table) throw new Error('No se encontró la tabla detallada.');
                 const head = [Array.from(table.querySelectorAll('thead th')).map(th => th.innerText.trim())];
                 const body = Array.from(table.querySelectorAll('tbody tr')).map(tr => Array.from(tr.cells).map(td => td.innerText.trim()));
                 pdf.autoTable({
-                    head, body, startY:20, theme:'grid',
-                    styles:{fontSize:8, halign:'center'},
-                    headStyles:{fillColor:[102,126,234]},
-                    margin:{left:10,right:10}
+                    head, body, startY:18, theme:'grid',
+                    styles:{fontSize:7, halign:'center', cellPadding:2},
+                    headStyles:{fillColor:[102,126,234], fontSize:7},
+                    margin:{top:18,left:7,right:7,bottom:10},
+                    didDrawPage: function(data) {
+                        pdf.setFontSize(9);
+                        pdf.setTextColor(44,62,80);
+                        pdf.text('Consolidado de Cumplimientos - Tabla detallada', 7, 9);
+                    }
                 });
             }
 
