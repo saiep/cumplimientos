@@ -2966,6 +2966,9 @@
                 // Cada panel restante ocupa una página completa. Así ranking, gráficos,
                 // evolución y matriz nunca se parten en un salto de hoja.
                 for (const panel of panels.slice(2)) {
+                    // Las observaciones se mantienen disponibles en el Dashboard y Excel,
+                    // pero no se incluyen en el PDF.
+                    if (panel.classList.contains('observations-panel')) continue;
                     await agregarElementoCompleto(panel, true);
                 }
             } else {
