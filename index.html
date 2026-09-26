@@ -152,8 +152,8 @@
         .dashboard-loading { padding:12px 16px; background:#f4f7fb; border-radius:9px; color:#667eea; font-weight:700; }
         .dash-kpis { display:grid; grid-template-columns:repeat(5,minmax(150px,1fr)); gap:14px; margin-bottom:18px; }
         .dash-kpi { background:#fff; border:1px solid #e5e9f2; border-radius:12px; padding:17px; box-shadow:0 3px 12px rgba(0,0,0,.06); }
-        .dash-kpi .label { color:#7f8c8d; font-size:.78em; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
-        .dash-kpi .value { color:#2c3e50; font-size:1.9em; font-weight:800; margin-top:7px; }
+        .dash-kpi .label { color:#526170; font-size:.78em; font-weight:800; text-transform:uppercase; letter-spacing:.055em; line-height:1.15; }
+        .dash-kpi .value { color:#243447; font-size:2.05em; font-weight:900; line-height:1; margin-top:9px; letter-spacing:-.02em; }
         .dash-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
         .dash-panel { background:#fff; border:1px solid #e5e9f2; border-radius:12px; padding:18px; box-shadow:0 3px 12px rgba(0,0,0,.06); min-width:0; }
         .dash-panel.full { grid-column:1 / -1; }
@@ -484,13 +484,16 @@
             }
 
             .dash-kpi .label {
-                font-size: .65em;
-                line-height: 1.2;
+                font-size: .68em;
+                line-height: 1.15;
+                font-weight: 800;
             }
 
             .dash-kpi .value {
-                font-size: 1.35em;
-                margin-top: 5px;
+                font-size: 1.5em;
+                line-height: 1;
+                margin-top: 7px;
+                font-weight: 900;
             }
 
             .dash-panel {
@@ -2929,12 +2932,15 @@
                     pdf.roundedRect(x, kpiY, kpiW, 22, 2, 2, 'FD');
                     const label = kpi.querySelector('.label')?.innerText || '';
                     const value = kpi.querySelector('.value')?.innerText || '';
-                    pdf.setFontSize(7);
-                    pdf.setTextColor(120,128,142);
-                    pdf.text(label, x + 4, kpiY + 7);
-                    pdf.setFontSize(13);
-                    pdf.setTextColor(44,62,80);
-                    pdf.text(value, x + 4, kpiY + 16);
+                    pdf.setFontSize(8.5);
+                    pdf.setFont(undefined, 'bold');
+                    pdf.setTextColor(82,97,113);
+                    pdf.text(label.toUpperCase(), x + 4, kpiY + 7);
+                    pdf.setFontSize(15.5);
+                    pdf.setFont(undefined, 'bold');
+                    pdf.setTextColor(36,52,71);
+                    pdf.text(value, x + 4, kpiY + 17);
+                    pdf.setFont(undefined, 'normal');
                 });
 
                 const panels = Array.from(document.querySelectorAll('#dashboardView .dash-panel'));
