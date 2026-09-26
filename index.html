@@ -2854,7 +2854,7 @@
             wm.getColumn(2).width = 22;
 
             // Formato final
-            [ws,wr,wm,we].forEach(sh=>{sh.eachRow(r=>r.eachCell(c=>{if(!c.fill||c.fill.type!=='pattern') c.fill=fill('FFFFFFFF');}));});
+            [ws,wr,wm].forEach(sh=>{sh.eachRow(r=>r.eachCell(c=>{if(!c.fill||c.fill.type!=='pattern') c.fill=fill('FFFFFFFF');}));});
 
             const buffer=await workbook.xlsx.writeBuffer();
             saveAs(new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Dashboard_${nombreBase}.xlsx`);
