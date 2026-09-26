@@ -2703,6 +2703,7 @@
             workbook.created = new Date();
 
             const mes = document.getElementById('monthInput')?.value || getMesActual();
+            const nombreBase = obtenerNombreArchivoVista();
             const zona = String(zonaSeleccionada || 'Zona');
             const resumen = resumenDashboardActual();
             const sucursales = obtenerSucursalesZonaDashboard();
@@ -2770,11 +2771,87 @@
             sucursales.forEach((s)=>{const row=wm.addRow([s]);PROVEEDORES.forEach((p,i)=>{const c=row.getCell(i+2);const nd=SUCURSALES_NO_DISPONIBLE[s]?.includes(p);const ra=(SUCURSALES_RA[p]||[]).includes(s);const v=cumplimientoDeDato(datosConsolidados[s]?.[p]);if(nd){c.value='N/R';c.fill=fill('FFF3F4F6');}else if(ra){c.value='RA';c.fill=fill('FFE3F2FD');c.font={bold:true,color:{argb:'FF1565C0'}};}else if(v!==null&&Number.isFinite(Number(v))){c.value=Number(v)/100;c.numFmt='0%';c.font={bold:true};c.fill=fill(Number(v)>=90?'FFD4EDDA':Number(v)>=75?'FFFFF3CD':'FFF8D7DA');c.font.color={argb:Number(v)>=90?'FF155724':Number(v)>=75?'FF856404':'FF721C24'};}else c.value='-';c.alignment={horizontal:'center'};});});
             wm.eachRow(r=>r.eachCell(c=>c.border=border));wm.autoFilter={from:'A2',to:`F${wm.rowCount}`};wm.views=[{state:'frozen',ySplit:2}];
 
-            // ───────────── EVOLUCIÓN ─────────────
-            const we=workbook.addWorksheet('Evolución');we.columns=[{width:16},{width:22}];we.mergeCells('A1:H1');we.getCell('A1').value='EVOLUCIÓN MENSUAL';Object.assign(we.getCell('A1'),titleStyle);we.getRow(1).height=30;we.mergeCells('A2:H2');we.getCell('A2').value=`Zona: ${zona}`;we.getCell('A2').alignment={horizontal:'center'};
-            we.addRow([]);we.addRow(['Mes','Cumplimiento global']);we.getRow(4).eachCell(c=>Object.assign(c,headerStyle));
-            if(typeof mesesHistoricoDashboard==='function'&&DASHBOARD_DATA_CACHE){mesesHistoricoDashboard().forEach(m=>{const info=DASHBOARD_DATA_CACHE.meses?.[m];let vals=[];if(info)Object.entries(info.cells||{}).forEach(([key,val])=>{const [s,p]=key.split('|');if(!sucursales.includes(s)||!PROVEEDORES.includes(p)||SUCURSALES_NO_DISPONIBLE[s]?.includes(p)||(SUCURSALES_RA[p]||[]).includes(s))return;const n=Number(val);if(Number.isFinite(n))vals.push(n);});const row=we.addRow([m,vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)/100:'-']);if(vals.length)row.getCell(2).numFmt='0%';});}
-            addCanvasImage(we,'dashboardTrendChart',{col:3,row:3},{col:10,row:20});
+            // ───────────── OBSERVACIONES + EVOLUCIÓN EN LA MISMA HOJA MATRIZ ─────────────
+            // La matriz queda como última hoja y debajo se incorporan las observaciones
+            // y la evolución mensual, tal como se muestran en el Dashboard.
+            const filaObs = wm.rowCount + 3;
+            setSectionTitle(wm, filaObs, '📌 OBSERVACIONES', PROVEEDORES.length + 1);
+            wm.mergeCells(filaObs + 1, 1, filaObs + 1, PROVEEDORES.length + 1);
+            wm.getCell(filaObs + 1, 1).value = 'Sucursales que no registran pedidos de uno o más proveedores, excluyendo RA y referencias no disponibles.';
+            wm.getCell(filaObs + 1, 1).font = { italic:true, size:9, color:{argb:'FF667085'} };
+            wm.getCell(filaObs + 1, 1).alignment = { wrapText:true, vertical:'middle' };
+            wm.getRow(filaObs + 1).height = 28;
+
+            const observaciones = [];
+            sucursales.forEach(s => {
+                const faltantes = [];
+                PROVEEDORES.forEach(p => {
+                    const esND = SUCURSALES_NO_DISPONIBLE[s]?.includes(p);
+                    const esRA = (SUCURSALES_RA[p] || []).includes(s);
+                    if (esND || esRA) return;
+                    const dato = datosConsolidados[s]?.[p];
+                    if (!dato) faltantes.push(p);
+                });
+                if (faltantes.length) observaciones.push({suc:s, faltantes});
+            });
+
+            let filaActual = filaObs + 3;
+            if (!observaciones.length) {
+                wm.mergeCells(filaActual, 1, filaActual, PROVEEDORES.length + 1);
+                wm.getCell(filaActual, 1).value = '✅ No se detectaron observaciones de pedidos faltantes para las sucursales de la zona seleccionada.';
+                wm.getCell(filaActual, 1).font = { color:{argb:'FF2E7D32'}, bold:true };
+                filaActual++;
+            } else {
+                observaciones.forEach(o => {
+                    const proveedores = o.faltantes.length === 1 ? o.faltantes[0] : o.faltantes.length === 2 ? `${o.faltantes[0]} y ${o.faltantes[1]}` : `${o.faltantes.slice(0,-1).join(', ')} y ${o.faltantes[o.faltantes.length-1]}`;
+                    wm.mergeCells(filaActual, 1, filaActual, PROVEEDORES.length + 1);
+                    wm.getCell(filaActual, 1).value = `• Sucursal ${o.suc}: No se registran pedidos de ${proveedores}.`;
+                    wm.getCell(filaActual, 1).alignment = {wrapText:true, vertical:'middle'};
+                    wm.getCell(filaActual, 1).fill = fill('FFFFFBEB');
+                    wm.getCell(filaActual, 1).border = border;
+                    wm.getRow(filaActual).height = 22;
+                    filaActual++;
+                });
+            }
+
+            const filaEvo = filaActual + 2;
+            setSectionTitle(wm, filaEvo, '📈 EVOLUCIÓN MENSUAL', PROVEEDORES.length + 1);
+            wm.mergeCells(filaEvo + 1, 1, filaEvo + 1, PROVEEDORES.length + 1);
+            wm.getCell(filaEvo + 1, 1).value = 'Últimos 12 meses disponibles para la zona seleccionada';
+            wm.getCell(filaEvo + 1, 1).font = {italic:true, size:9, color:{argb:'FF667085'}};
+
+            const evoHeader = filaEvo + 3;
+            wm.getCell(evoHeader, 1).value = 'Mes';
+            wm.getCell(evoHeader, 2).value = 'Cumplimiento global';
+            wm.getCell(evoHeader, 1).font = wm.getCell(evoHeader, 2).font = headerStyle.font;
+            wm.getCell(evoHeader, 1).fill = wm.getCell(evoHeader, 2).fill = headerStyle.fill;
+            wm.getCell(evoHeader, 1).alignment = wm.getCell(evoHeader, 2).alignment = headerStyle.alignment;
+            wm.getCell(evoHeader, 1).border = wm.getCell(evoHeader, 2).border = border;
+
+            let filaEvoData = evoHeader + 1;
+            if (typeof mesesHistoricoDashboard === 'function' && DASHBOARD_DATA_CACHE) {
+                mesesHistoricoDashboard().forEach(m => {
+                    const info = DASHBOARD_DATA_CACHE.meses?.[m];
+                    const vals = [];
+                    if (info) Object.entries(info.cells || {}).forEach(([key, val]) => {
+                        const [s,p] = key.split('|');
+                        if (!sucursales.includes(s) || !PROVEEDORES.includes(p) || SUCURSALES_NO_DISPONIBLE[s]?.includes(p) || (SUCURSALES_RA[p] || []).includes(s)) return;
+                        const n = Number(val);
+                        if (Number.isFinite(n)) vals.push(n);
+                    });
+                    const row = wm.getRow(filaEvoData);
+                    row.getCell(1).value = m;
+                    row.getCell(2).value = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)/100 : '-';
+                    if (vals.length) row.getCell(2).numFmt = '0%';
+                    row.eachCell(c => c.border = border);
+                    filaEvoData++;
+                });
+            }
+
+            // Inserta el gráfico de evolución debajo de los datos, manteniendo todo en la última hoja.
+            addCanvasImage(wm, 'dashboardTrendChart', {col:3,row:evoHeader-1}, {col:9,row:evoHeader+12});
+            wm.getColumn(1).width = 18;
+            wm.getColumn(2).width = 22;
 
             // Formato final
             [ws,wr,wm,we].forEach(sh=>{sh.eachRow(r=>r.eachCell(c=>{if(!c.fill||c.fill.type!=='pattern') c.fill=fill('FFFFFFFF');}));});
