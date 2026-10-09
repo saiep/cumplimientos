@@ -856,7 +856,7 @@
                 <h3>📈 Evolución mensual</h3>
                 <div class="sub">Últimos 12 meses disponibles para la zona seleccionada</div>
                 <div class="dash-chart-wrap"><canvas id="dashboardTrendChart"></canvas></div>
-                <div class="dash-note">Los meses sin registros se muestran sin dato. Cambiá el mes o la zona y el dashboard se recalcula.</div>
+                <div class="dash-note" id="dashboardTrendNote">Los meses sin registros se muestran sin dato. Cambiá el mes o la zona y el dashboard se recalcula.</div>
             </div>
             <div class="dash-panel full">
                 <h3>🟢 Matriz Sucursal × Proveedor</h3>
@@ -2642,11 +2642,29 @@
         loader.style.display = 'block';
         try {
             if (!DASHBOARD_DATA_CACHE) return;
+
             const meses = mesesHistoricoDashboard();
             const sucursales = obtenerSucursalesZonaDashboard();
-            const values = meses.map(mes => {
+            const mesSeleccionado = document.getElementById('monthInput')?.value || getMesActual();
+            const mesActual = getMesActual();
+            const ES_MES_EN_CURSO = mesSeleccionado === mesActual;
+            const COBERTURA_MINIMA_AVANCE = 0.70; // 70% de las relaciones evaluables
+
+            const estadisticas = meses.map(mes => {
                 const info = DASHBOARD_DATA_CACHE.meses?.[mes];
-                if (!info) return null;
+                if (!info) return { valor:null, cantidad:0, total:0, cobertura:0 };
+
+                // Total de relaciones que deberían poder evaluarse para esta zona,
+                // excluyendo RA y referencias no disponibles.
+                let total = 0;
+                sucursales.forEach(suc => {
+                    PROVEEDORES.forEach(prov => {
+                        const esND = SUCURSALES_NO_DISPONIBLE[suc]?.includes(prov);
+                        const esRA = (SUCURSALES_RA[prov] || []).includes(suc);
+                        if (!esND && !esRA) total++;
+                    });
+                });
+
                 const vals = [];
                 Object.entries(info.cells || {}).forEach(([clave, valor]) => {
                     const [suc, prov] = clave.split('|');
@@ -2656,8 +2674,39 @@
                     const c = Number(valor);
                     if (!esND && !esRA && Number.isFinite(c)) vals.push(c);
                 });
-                return vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
+
+                const cobertura = total ? vals.length / total : 0;
+                const valor = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
+                return { valor, cantidad:vals.length, total, cobertura };
             });
+
+            const values = estadisticas.map((e, i) => {
+                const mes = meses[i];
+                // El mes en curso no se incorpora a la línea histórica si todavía
+                // tiene poca cobertura. Así evitamos una lectura falsa.
+                if (ES_MES_EN_CURSO && mes === mesSeleccionado && e.cobertura < COBERTURA_MINIMA_AVANCE) return null;
+                return e.valor;
+            });
+
+            const indiceActual = meses.indexOf(mesSeleccionado);
+            const estadisticaActual = indiceActual >= 0 ? estadisticas[indiceActual] : null;
+            const avanceParcial = ES_MES_EN_CURSO && estadisticaActual?.valor != null && estadisticaActual.cobertura < COBERTURA_MINIMA_AVANCE;
+
+            // Punto separado para el avance parcial: se muestra, pero NO se une
+            // a la línea histórica y queda explícitamente identificado.
+            const avanceValues = meses.map((m, i) => (avanceParcial && i === indiceActual) ? estadisticas[i].valor : null);
+
+            const nota = document.getElementById('dashboardTrendNote');
+            if (nota) {
+                if (avanceParcial) {
+                    const e = estadisticaActual;
+                    nota.innerHTML = `⚠️ <strong>${mesSeleccionado}</strong> es un avance parcial: <strong>${Math.round(e.cobertura*100)}% de cobertura (${e.cantidad}/${e.total})</strong>. El valor no se incorpora a la línea histórica hasta alcanzar al menos el 70% de cobertura.`;
+                } else if (ES_MES_EN_CURSO && estadisticaActual?.valor != null) {
+                    nota.innerHTML = `📌 <strong>${mesSeleccionado}</strong> muestra el avance del mes. Cobertura actual: <strong>${Math.round(estadisticaActual.cobertura*100)}%</strong> (${estadisticaActual.cantidad}/${estadisticaActual.total}).`;
+                } else {
+                    nota.textContent = 'Los meses sin registros se muestran sin dato. Cambiá el mes o la zona y el dashboard se recalcula.';
+                }
+            }
 
             const canvasTrend = document.getElementById('dashboardTrendChart');
             if (!canvasTrend) { console.warn('⚠️ No se encontró el gráfico histórico.'); return; }
@@ -2665,12 +2714,53 @@
             if (dashboardTrendChart) dashboardTrendChart.destroy();
             const labels = meses.map(x => {
                 const [a,m] = x.split('-');
-                return ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(m)-1] + ' ' + a.slice(2);
+                const base = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][parseInt(m)-1] + ' ' + a.slice(2);
+                return (x === mesSeleccionado && ES_MES_EN_CURSO) ? base + ' · Avance' : base;
             });
+
+            const datasets = [{
+                label:'Cumplimiento mensual',
+                data:values,
+                borderColor:'#667eea',
+                backgroundColor:'rgba(102,126,234,.12)',
+                fill:true,
+                tension:.3,
+                spanGaps:false,
+                pointRadius:4
+            }];
+
+            if (avanceParcial) {
+                datasets.push({
+                    label:'Avance parcial',
+                    data:avanceValues,
+                    borderColor:'#f0b429',
+                    backgroundColor:'rgba(240,180,41,.10)',
+                    fill:false,
+                    borderDash:[6,5],
+                    tension:0,
+                    spanGaps:false,
+                    pointRadius:6,
+                    pointHoverRadius:8,
+                    pointStyle:'triangle'
+                });
+            }
+
             dashboardTrendChart = new Chart(ctx, {
                 type:'line',
-                data:{labels,datasets:[{label:'Cumplimiento global',data:values,borderColor:'#667eea',backgroundColor:'rgba(102,126,234,.12)',fill:true,tension:.3,spanGaps:false,pointRadius:4}]},
-                options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y == null ? 'Sin datos' : c.parsed.y+'%'}}},scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}}}
+                data:{labels,datasets},
+                options:{
+                    responsive:true,
+                    maintainAspectRatio:false,
+                    plugins:{
+                        legend:{display:avanceParcial, position:'top'},
+                        tooltip:{callbacks:{label:c=>{
+                            const e = estadisticas[c.dataIndex];
+                            if (c.datasetIndex === 1 && e) return `Avance parcial: ${c.parsed.y}% · Cobertura ${Math.round(e.cobertura*100)}% (${e.cantidad}/${e.total})`;
+                            return c.parsed.y == null ? 'Sin datos' : c.parsed.y+'%';
+                        }}}
+                    },
+                    scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}}
+                }
             });
         } catch (e) {
             console.warn('⚠️ Histórico no disponible:', e.message);
