@@ -2462,8 +2462,8 @@
                 indice: Math.round(x.cumplimiento * 0.70 + x.cobertura * 0.30)
             }))
             .sort((a,b) => {
-                const ga = a.evaluados >= 3 ? 0 : 1;
-                const gb = b.evaluados >= 3 ? 0 : 1;
+                const ga = a.evaluados >= 4 ? 0 : 1;
+                const gb = b.evaluados >= 4 ? 0 : 1;
                 return (ga-gb) || (b.cumplimiento-a.cumplimiento) || (b.evaluados-a.evaluados) || a.sucursal.localeCompare(b.sucursal);
             });
     }
@@ -2493,8 +2493,11 @@
         const sucursales = r.sucursales || [];
         const total = sucursales.length;
         const detalle = sucursales.map(obtenerDatosCoberturaSucursal);
-        const altos = detalle.filter(x => x.evaluados >= 3);
-        const bajos = detalle.filter(x => x.evaluados >= 1 && x.evaluados <= 2);
+
+        // Clasificación única y consistente con el ranking:
+        // 4–5 = carga alta; 1–3 = carga parcial; 0 = sin datos cargados.
+        const altos = detalle.filter(x => x.evaluados >= 4);
+        const bajos = detalle.filter(x => x.evaluados >= 1 && x.evaluados <= 3);
         const sinDatos = detalle.filter(x => x.evaluados === 0);
 
         const promedio = arr => arr.length
@@ -2511,6 +2514,7 @@
         const pctSinDatos = total ? Math.round(nSinDatos / total * 100) : 0;
 
         // Cobertura real: solo se consideran combinaciones que realmente pueden evaluarse.
+        // RA y N/R no forman parte del denominador.
         const combinacionesPosibles = detalle.reduce((n,x) => n + x.posibles, 0);
         const combinacionesEvaluadas = detalle.reduce((n,x) => n + x.evaluados, 0);
         const coberturaReal = combinacionesPosibles
@@ -2526,27 +2530,27 @@
             <div class="coverage-analysis">
                 <div class="coverage-analysis-cards">
                     <div class="coverage-analysis-card high">
-                        <div class="ca-title">🟢 4 a 5 proveedores evaluados</div>
+                        <div class="ca-title">🟢 4 a 5 proveedores con datos</div>
                         <div class="ca-main">${nAltos} suc. · ${pAltos ?? '-'}%</div>
                         <div class="ca-detail">${pctAltos}% de las sucursales · cumplimiento promedio</div>
                     </div>
                     <div class="coverage-analysis-card low">
-                        <div class="ca-title">🟠 1 a 3 proveedores evaluados</div>
+                        <div class="ca-title">🟠 1 a 3 proveedores con datos</div>
                         <div class="ca-main">${nBajos} suc. · ${pBajos ?? '-'}%</div>
                         <div class="ca-detail">${pctBajos}% de las sucursales · cumplimiento promedio</div>
                     </div>
                 </div>
                 <div class="coverage-distribution">
-                    <div class="coverage-distribution-title">Distribución de sucursales</div>
-                    <div class="coverage-bar-row"><span>🟢 4 a 5 proveedores</span><div class="coverage-bar-track"><div class="coverage-bar-fill high" style="width:${pctAltos}%"></div></div><strong>${pctAltos}%</strong></div>
-                    <div class="coverage-bar-row"><span>🟠 1 a 3 proveedores</span><div class="coverage-bar-track"><div class="coverage-bar-fill low" style="width:${pctBajos}%"></div></div><strong>${pctBajos}%</strong></div>
-                    <div class="coverage-bar-row"><span>⚪ 0 proveedores evaluados</span><div class="coverage-bar-track"><div class="coverage-bar-fill" style="width:${pctSinDatos}%"></div></div><strong>${pctSinDatos}%</strong></div>
+                    <div class="coverage-distribution-title">Distribución de sucursales según carga de datos</div>
+                    <div class="coverage-bar-row"><span>🟢 4 a 5 proveedores con datos</span><div class="coverage-bar-track"><div class="coverage-bar-fill high" style="width:${pctAltos}%"></div></div><strong>${pctAltos}%</strong></div>
+                    <div class="coverage-bar-row"><span>🟠 1 a 3 proveedores con datos</span><div class="coverage-bar-track"><div class="coverage-bar-fill low" style="width:${pctBajos}%"></div></div><strong>${pctBajos}%</strong></div>
+                    <div class="coverage-bar-row"><span>⚪ 0 proveedores con datos</span><div class="coverage-bar-track"><div class="coverage-bar-fill" style="width:${pctSinDatos}%"></div></div><strong>${pctSinDatos}%</strong></div>
                 </div>
                 <div class="coverage-analysis-card" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                    <div><div class="ca-title">📦 Cobertura de datos</div><div class="ca-main">${coberturaReal}%</div><div class="ca-detail">combinaciones evaluables con datos</div></div>
-                    <div><div class="ca-title">🔵 RA activas</div><div class="ca-main">${raTotal}</div><div class="ca-detail">referencias excluidas del cálculo</div></div>
+                    <div><div class="ca-title">📦 Cobertura de carga</div><div class="ca-main">${coberturaReal}%</div><div class="ca-detail">${combinacionesEvaluadas} de ${combinacionesPosibles} combinaciones evaluables tienen datos</div></div>
+                    <div><div class="ca-title">🔵 RA activas</div><div class="ca-main">${raTotal}</div><div class="ca-detail">referencias excluidas del análisis</div></div>
                 </div>
-                <div class="coverage-insight"><strong>💡 Cómo leerlo:</strong> el grupo indica cuántos proveedores pudieron evaluarse en cada sucursal. El % es el cumplimiento promedio de esas sucursales. Las sucursales sin ningún proveedor evaluado se muestran aparte y no influyen en el promedio.</div>
+                <div class="coverage-insight"><strong>💡 Cómo leerlo:</strong> los <b>4–5</b> indican sucursales con alta carga de información; <b>1–3</b> indican carga parcial; y <b>0</b> significa que la sucursal no tiene datos cargados en ninguna combinación evaluable. Los estados <b>RA</b> y <b>N/R</b> no se consideran faltantes ni forman parte del cálculo de cobertura.</div>
             </div>`;
     }
 
@@ -2563,7 +2567,7 @@
                 const esRA = (SUCURSALES_RA[prov] || []).includes(suc);
                 if (esND || esRA) return;
                 const dato = datosConsolidados[suc]?.[prov];
-                if (!dato) faltantes.push(prov);
+                if (cumplimientoDeDato(dato) === null) faltantes.push(prov);
             });
             if (faltantes.length) observaciones.push({ suc, faltantes });
         });
@@ -2781,14 +2785,19 @@
             addCanvasImage(ws,'dashboardProviderChart',{col:3,row:7},{col:8,row:19});
 
             setSectionTitle(ws,21,'📈 Análisis de cobertura y desempeño',8);
-            let altos=0,bajos=0,pAltos=0,pBajos=0;
-            sucursales.forEach(s=>{let n=0,sum=0;PROVEEDORES.forEach(p=>{if(SUCURSALES_NO_DISPONIBLE[s]?.includes(p)||(SUCURSALES_RA[p]||[]).includes(s))return;const c=cumplimientoDeDato(datosConsolidados[s]?.[p]);if(c!==null&&Number.isFinite(Number(c))){n++;sum+=Number(c);}});if(n){if(n>=4){altos++;pAltos+=Math.round(sum/n)}else{bajos++;pBajos+=Math.round(sum/n)}}});
+            let altos=0,bajos=0,sinDatos=0,pAltos=0,pBajos=0;
+            let combinacionesPosibles=0,combinacionesEvaluadas=0;
+            sucursales.forEach(s=>{let n=0,sum=0;PROVEEDORES.forEach(p=>{if(SUCURSALES_NO_DISPONIBLE[s]?.includes(p)||(SUCURSALES_RA[p]||[]).includes(s))return;combinacionesPosibles++;const c=cumplimientoDeDato(datosConsolidados[s]?.[p]);if(c!==null&&Number.isFinite(Number(c))){n++;sum+=Number(c);combinacionesEvaluadas++;}});if(n>=4){altos++;pAltos+=Math.round(sum/n)}else if(n>=1){bajos++;pBajos+=Math.round(sum/n)}else{sinDatos++;}});
             const totalSuc=sucursales.length||1;
             ws.addRow(['Grupo','Sucursales','% del total','Cumplimiento promedio']);
             ws.getRow(22).eachCell(c=>Object.assign(c,headerStyle));
-            ws.addRow(['4 a 5 proveedores',altos,altos/totalSuc,pAltos/(altos||1)/100]); ws.addRow(['1 a 3 proveedores',bajos,bajos/totalSuc,pBajos/(bajos||1)/100]);
-            [23,24].forEach(r=>{ws.getCell(r,3).numFmt='0%';ws.getCell(r,4).numFmt='0%';}); estiloTabla(ws,22,24,1,4);
-            ws.addRow([]); ws.addRow(['Proveedores con actividad', (function(){let n=0,t=sucursales.length*PROVEEDORES.length;sucursales.forEach(s=>PROVEEDORES.forEach(p=>{if(SUCURSALES_NO_DISPONIBLE[s]?.includes(p)||(SUCURSALES_RA[p]||[]).includes(s))return;const c=cumplimientoDeDato(datosConsolidados[s]?.[p]);if(c!==null)n++;}));return t?Math.round(n/t*100)/100:0})()]); ws.getCell(26,2).numFmt='0%';
+            ws.addRow(['4 a 5 proveedores',altos,altos/totalSuc,pAltos/(altos||1)/100]);
+            ws.addRow(['1 a 3 proveedores',bajos,bajos/totalSuc,pBajos/(bajos||1)/100]);
+            ws.addRow(['0 proveedores',sinDatos,sinDatos/totalSuc,'-']);
+            [23,24,25].forEach(r=>{ws.getCell(r,3).numFmt='0%';if(r<25)ws.getCell(r,4).numFmt='0%';}); estiloTabla(ws,22,25,1,4);
+            ws.addRow([]);
+            ws.addRow(['Cobertura de carga',combinacionesPosibles?combinacionesEvaluadas/combinacionesPosibles:0]);
+            ws.getCell(27,2).numFmt='0%';
 
             // ───────────── RANKING ─────────────
             const wr=workbook.addWorksheet('Ranking'); wr.columns=[{width:12},{width:18},{width:20},{width:16},{width:18},{width:16}];
@@ -2826,7 +2835,7 @@
                     const esRA = (SUCURSALES_RA[p] || []).includes(s);
                     if (esND || esRA) return;
                     const dato = datosConsolidados[s]?.[p];
-                    if (!dato) faltantes.push(p);
+                    if (cumplimientoDeDato(dato) === null) faltantes.push(p);
                 });
                 if (faltantes.length) observaciones.push({suc:s, faltantes});
             });
