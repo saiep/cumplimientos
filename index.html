@@ -1068,15 +1068,17 @@
         });
     }
 
-    async function jsonpGetConReintentos(url, intentos = 3, esperaMs = 900) {
+    async function jsonpGetConReintentos(url, intentos = 6, esperaMs = 2500, onRetry = null) {
         let ultimoError = null;
         for (let intento = 1; intento <= intentos; intento++) {
             try {
-                return await jsonpGet(url, 15000);
+                return await jsonpGet(url, 12000);
             } catch (error) {
                 ultimoError = error;
                 if (intento < intentos) {
-                    await new Promise(resolve => setTimeout(resolve, esperaMs * intento));
+                    const espera = esperaMs * intento;
+                    if (typeof onRetry === 'function') onRetry(intento + 1, intentos, espera, error);
+                    await new Promise(resolve => setTimeout(resolve, espera));
                 }
             }
         }
@@ -2790,6 +2792,101 @@
         });
     }
 
+    async function verificarValidacionCeroRemota(mes, sucursal, proveedor) {
+        const params = new URLSearchParams({
+            action: 'get_validacion_0',
+            mes: mes,
+            sucursal: String(sucursal).replace(/\D/g, '').padStart(3, '0'),
+            proveedor: String(proveedor).trim().toUpperCase(),
+            _t: String(Date.now())
+        });
+        return await jsonpGetConReintentos(
+            `${GOOGLE_SHEETS_URL}?${params.toString()}`,
+            6,
+            2500
+        );
+    }
+
+    function enviarValidacionCeroPorPost(mes, sucursal, proveedor, responsable) {
+        return new Promise((resolve, reject) => {
+            const iframeName = '__saiep_post_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            const iframe = document.createElement('iframe');
+            iframe.name = iframeName;
+            iframe.id = iframeName;
+            iframe.style.display = 'none';
+            iframe.setAttribute('aria-hidden', 'true');
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = GOOGLE_SHEETS_URL;
+            form.target = iframeName;
+            form.enctype = 'application/x-www-form-urlencoded';
+            form.style.display = 'none';
+
+            const valores = {
+                action: 'save_validacion_0',
+                mes: mes,
+                sucursal: String(sucursal).replace(/\D/g, '').padStart(3, '0'),
+                proveedor: String(proveedor).trim().toUpperCase(),
+                usuario: String(responsable).trim(),
+                _t: String(Date.now())
+            };
+
+            Object.entries(valores).forEach(([nombre, valor]) => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = nombre;
+                input.value = valor;
+                form.appendChild(input);
+            });
+
+            let terminado = false;
+            const limpiar = () => {
+                window.setTimeout(() => {
+                    if (form.parentNode) form.parentNode.removeChild(form);
+                    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+                }, 1200);
+            };
+
+            iframe.onload = () => {
+                if (terminado) return;
+                terminado = true;
+                limpiar();
+                resolve(true);
+            };
+
+            iframe.onerror = () => {
+                if (terminado) return;
+                terminado = true;
+                limpiar();
+                resolve(false);
+            };
+
+            document.body.appendChild(iframe);
+            document.body.appendChild(form);
+
+            try {
+                form.submit();
+                // No esperamos ni leemos la respuesta del iframe: el POST
+                // puede redirigir a googleusercontent y dar 404 aunque el
+                // doPost() ya haya ejecutado el guardado.
+                window.setTimeout(() => {
+                    if (!terminado) {
+                        terminado = true;
+                        limpiar();
+                        resolve(true);
+                    }
+                }, 2500);
+            } catch (error) {
+                if (!terminado) {
+                    terminado = true;
+                    limpiar();
+                    reject(error);
+                }
+            }
+        });
+    }
+
     async function guardarValidacionCero(sucursal, proveedor, responsable) {
         const mes = document.getElementById('monthInput')?.value || getMesActual();
         const boton = document.getElementById('btnConfirmarValidacion0');
@@ -2799,37 +2896,56 @@
         }
 
         try {
+            let verificacionFinal = null;
+            let ultimoError = null;
+
             /*
-             * IMPORTANTE:
-             * La escritura se hace por GET + JSONP, igual que las lecturas.
-             * Desde GitHub Pages, el POST a /exec puede atravesar el redirect
-             * de Apps Script/ContentService y terminar en una respuesta 404 o
-             * sin los parámetros esperados. La validación es idempotente en
-             * Apps Script, por lo que el reintento es seguro.
+             * La escritura se realiza mediante un formulario POST nativo.
+             * Así el navegador no necesita leer una respuesta CORS de Apps
+             * Script. Luego verificamos por GET/JSONP (solo lectura) que la
+             * fila realmente exista en Validaciones0.
              */
-            const params = new URLSearchParams({
-                action: 'save_validacion_0',
-                mes: mes,
-                sucursal: String(sucursal).replace(/\D/g, '').padStart(3, '0'),
-                proveedor: String(proveedor).trim().toUpperCase(),
-                usuario: String(responsable).trim(),
-                _t: String(Date.now())
-            });
+            for (let intento = 1; intento <= 3; intento++) {
+                if (boton) {
+                    boton.textContent = intento === 1
+                        ? '⏳ Guardando…'
+                        : `⏳ Reintentando guardado… (${intento}/3)`;
+                }
 
-            const result = await jsonpGetConReintentos(
-                `${GOOGLE_SHEETS_URL}?${params.toString()}`,
-                3,
-                900
-            );
+                try {
+                    await enviarValidacionCeroPorPost(mes, sucursal, proveedor, responsable);
+                } catch (errorPost) {
+                    ultimoError = errorPost;
+                    console.warn('⚠️ POST de validación 0%:', errorPost);
+                }
 
-            if (!result || !result.success) {
-                throw new Error(result?.error || 'No fue posible guardar la validación.');
+                try {
+                    if (boton) boton.textContent = '🔎 Verificando guardado…';
+                    verificacionFinal = await verificarValidacionCeroRemota(mes, sucursal, proveedor);
+                    if (verificacionFinal?.success === true && verificacionFinal.validado === true) {
+                        break;
+                    }
+                } catch (errorVerificacion) {
+                    ultimoError = errorVerificacion;
+                    console.warn('⚠️ Verificación de validación 0%:', errorVerificacion);
+                }
+
+                if (intento < 3) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
+            }
+
+            if (!verificacionFinal?.success || !verificacionFinal.validado) {
+                throw new Error(
+                    ultimoError?.message ||
+                    'Google Apps Script no confirmó el guardado de la validación.'
+                );
             }
 
             const clave = claveValidacion0(mes, sucursal, proveedor);
             VALIDACIONES_0[clave] = {
-                fecha: result.fecha || new Date().toISOString(),
-                usuario: result.usuario || responsable
+                fecha: verificacionFinal.fecha || new Date().toISOString(),
+                usuario: verificacionFinal.usuario || responsable
             };
 
             cerrarModalValidacion0();
@@ -2838,7 +2954,7 @@
                 cerrarModalAdminValidaciones0();
                 abrirAdminValidaciones0();
             }
-            alert(`✅ 0% validado correctamente.\n\nSucursal ${String(sucursal).padStart(3, '0')} · ${proveedor}\nValidó: ${result.usuario || responsable}\nLa alerta dejará de aparecer para ${mes}.`);
+            alert(`✅ 0% validado correctamente.\n\nSucursal ${String(sucursal).padStart(3, '0')} · ${proveedor}\nValidó: ${verificacionFinal.usuario || responsable}\nLa alerta dejará de aparecer para ${mes}.`);
         } catch (error) {
             console.error('❌ Error guardando validación 0%:', error);
             if (boton) {
