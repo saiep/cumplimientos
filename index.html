@@ -2120,31 +2120,35 @@
             const [sucursal, proveedor] = clave.split('-');
             const datos = datosConsolidados[sucursal]?.[proveedor];
 
-            const cumplimiento = (typeof datos === 'object' && datos?.pedidoTotal !== undefined)
-                ? (datos.pedidoTotal > 0
-                    ? Math.round((datos.recibidoTotal / datos.pedidoTotal) * 100)
-                    : 0)
+            const pedidoTotal = (typeof datos === 'object' && datos?.pedidoTotal !== undefined)
+                ? Number(datos.pedidoTotal)
+                : NaN;
+            const recibidoTotal = (typeof datos === 'object' && datos?.recibidoTotal !== undefined)
+                ? Number(datos.recibidoTotal)
+                : NaN;
+
+            const cumplimiento = Number.isFinite(pedidoTotal)
+                ? (pedidoTotal > 0 ? Math.round((recibidoTotal / pedidoTotal) * 100) : 0)
                 : Number(datos);
 
             Array.from(ordenesNuevas[clave]).forEach(orden => {
                 datosParaGuardar.push({
-                    Sucursal: parseInt(sucursal, 10),
-                    Proveedor: proveedor,
-                    Cumplimiento: cumplimiento,
+                    Sucursal: String(sucursal).padStart(3, '0'),
+                    Proveedor: String(proveedor).trim().toUpperCase(),
+                    Cumplimiento: Number.isFinite(cumplimiento) ? cumplimiento : '',
+                    PedidoTotal: Number.isFinite(pedidoTotal) ? pedidoTotal : '',
+                    RecibidoTotal: Number.isFinite(recibidoTotal) ? recibidoTotal : '',
                     Mes: mesSeleccionado,
                     Usuario: 'Sistema',
-                    Orden: orden
+                    Orden: String(orden).trim()
                 });
             });
         });
 
         if (datosParaGuardar.length === 0) return true;
 
-        // GET + JSONP: evita el problema de CORS/redirect que puede afectar
-        // al POST de ContentService desde GitHub Pages.
-        // Lotes pequeños para mantener la URL dentro de un tamaño seguro.
         const TAM_LOTE = 10;
-        let totalInsertados = 0;
+        let totalPersistidos = 0;
 
         for (let i = 0; i < datosParaGuardar.length; i += TAM_LOTE) {
             const lote = datosParaGuardar.slice(i, i + TAM_LOTE);
@@ -2157,12 +2161,34 @@
 
                 const result = await jsonpGet(url, 20000);
 
+                console.log('📦 Respuesta real de Google Sheets:', result);
+
                 if (!result?.success) {
-                    throw new Error(result?.error || `Google Sheets rechazó el lote ${numeroLote}/${totalLotes}.`);
+                    const detalle = result?.ignoradosDetalle?.length
+                        ? '\n' + result.ignoradosDetalle.map(x => `• Registro ${x.indice}: ${x.motivo}`).join('\n')
+                        : '';
+                    throw new Error((result?.error || `Google Sheets rechazó el lote ${numeroLote}/${totalLotes}.`) + detalle);
                 }
 
-                totalInsertados += Number(result.insertados || 0);
-                console.log(`✅ Lote ${numeroLote}/${totalLotes} guardado. Recibidos: ${result.recibidos || lote.length} | Insertados: ${result.insertados || 0} | Actualizados: ${result.actualizados || 0} | Persistidos: ${result.persistidos || 0}`);
+                const persistidos = Number(result.persistidos || 0);
+                const validos = Number(result.validos ?? lote.length);
+
+                if (persistidos !== validos) {
+                    throw new Error(
+                        `Google Sheets respondió OK pero la verificación no coincide. ` +
+                        `Enviados: ${lote.length} | Válidos: ${validos} | Persistidos: ${persistidos}`
+                    );
+                }
+
+                totalPersistidos += persistidos;
+
+                console.log(
+                    `✅ Lote ${numeroLote}/${totalLotes} guardado y verificado. ` +
+                    `Recibidos: ${result.recibidos || lote.length} | ` +
+                    `Insertados: ${result.insertados || 0} | ` +
+                    `Actualizados: ${result.actualizados || 0} | ` +
+                    `Persistidos: ${persistidos}`
+                );
             } catch (error) {
                 console.error(`❌ Error guardando lote ${numeroLote}/${totalLotes}:`, error);
                 return false;
@@ -2170,8 +2196,8 @@
         }
 
         DASHBOARD_DATA_CACHE = null;
-        console.log(`✅ Guardado finalizado y verificado en Google Sheets. Registros enviados: ${datosParaGuardar.length}. Nuevos insertados: ${totalInsertados}.`);
-        return true;
+        console.log(`✅ Guardado finalizado y verificado en Google Sheets. Registros enviados: ${datosParaGuardar.length}. Persistidos: ${totalPersistidos}.`);
+        return totalPersistidos === datosParaGuardar.length;
     }
 
     // ════════════════════════════════════════════════════
