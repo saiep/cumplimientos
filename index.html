@@ -1648,7 +1648,16 @@
         generarTabla();
 
         if (Object.keys(ordenesNuevas).length > 0) {
-            await guardarEnGoogleSheets();
+            const guardadoOK = await guardarEnGoogleSheets();
+
+            if (!guardadoOK) {
+                alert(
+                    '⚠️ Los datos fueron procesados en el dashboard, pero no se pudo confirmar su guardado en Google Sheets.\n\n' +
+                    'No cierres la página ni recargues todavía. Revisá la conexión con Google Sheets.'
+                );
+            } else {
+                console.log('✅ Datos confirmados en Google Sheets.');
+            }
         }
 
         archivosSeleccionados = [];
@@ -2089,46 +2098,158 @@
         }
     }
 
-    async function guardarEnGoogleSheets() {
+    async function verificarGuardadoGoogleSheets(datosParaGuardar, mesSeleccionado, intento = 1) {
+        const esperados = {};
+
+        datosParaGuardar.forEach(registro => {
+            const suc = String(registro.Sucursal).padStart(3, '0');
+            const prov = String(registro.Proveedor || '').trim().toUpperCase();
+            const clave = `${suc}|${prov}`;
+
+            if (!esperados[clave]) {
+                esperados[clave] = {
+                    suc,
+                    prov,
+                    conOrdenes: 0,
+                    tieneRegistro: false
+                };
+            }
+
+            esperados[clave].tieneRegistro = true;
+            if (registro.Orden) esperados[clave].conOrdenes++;
+        });
+
         try {
-            const mesSeleccionado = document.getElementById('monthInput').value;
-            const datosParaGuardar = [];
+            const paquete = await jsonpGet(
+                `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mesSeleccionado)}&_verify=${Date.now()}`,
+                30000
+            );
 
-            Object.keys(ordenesNuevas).forEach(clave => {
-                const [sucursal, proveedor] = clave.split('-');
-                const datos = datosConsolidados[sucursal][proveedor];
+            const info = paquete?.meses?.[mesSeleccionado] || {};
+            const cells = info.cells || {};
+            const orders = info.orders || {};
 
-                const cumplimiento = (typeof datos === 'object' && datos.pedidoTotal !== undefined)
-                    ? (datos.pedidoTotal > 0 ? Math.round((datos.recibidoTotal / datos.pedidoTotal) * 100) : 0)
-                    : datos;
+            const pendientes = [];
 
-                Array.from(ordenesNuevas[clave]).forEach(orden => {
-                    datosParaGuardar.push({
-                        Sucursal: parseInt(sucursal),
-                        Proveedor: proveedor,
-                        Cumplimiento: cumplimiento,
-                        Mes: mesSeleccionado,
-                        Usuario: 'Sistema',
-                        Orden: orden
-                    });
-                });
+            Object.keys(esperados).forEach(clave => {
+                const item = esperados[clave];
+                const claveOrders = `${item.suc}|${item.prov}`;
+                const claveCells = `${item.suc}|${item.prov}`;
+
+                if (item.conOrdenes > 0) {
+                    const cantidadServidor = Number(orders[claveOrders] || 0);
+                    // ordenesProceadas ya contiene las órdenes que estaban en Sheets
+                    // más las nuevas. Por eso comparamos contra el total esperado local.
+                    const totalEsperadoLocal =
+                        ordenesProceadas[`${item.suc}-${item.prov}`]?.size || item.conOrdenes;
+
+                    if (cantidadServidor < totalEsperadoLocal) {
+                        pendientes.push(`${item.suc} - ${item.prov}`);
+                    }
+                } else if (cells[claveCells] === undefined) {
+                    pendientes.push(`${item.suc} - ${item.prov}`);
+                }
             });
 
-            if (datosParaGuardar.length === 0) return true;
+            if (pendientes.length === 0) {
+                return true;
+            }
 
-            const fd = new URLSearchParams();
-            fd.append('action', 'save');
-            fd.append('data', JSON.stringify(datosParaGuardar));
+            if (intento < 4) {
+                await new Promise(resolve => setTimeout(resolve, 1800 * intento));
+                return verificarGuardadoGoogleSheets(datosParaGuardar, mesSeleccionado, intento + 1);
+            }
 
-            const result = await fetchJSON(GOOGLE_SHEETS_URL, {
-                method: 'POST',
-                body: fd
-            });
-            return result.success;
+            console.warn('⚠️ Verificación de guardado pendiente:', pendientes);
+            return false;
         } catch (error) {
-            console.error('❌ Error guardando:', error);
+            console.warn(`⚠️ No se pudo verificar el guardado (intento ${intento}/4):`, error.message);
+
+            if (intento < 4) {
+                await new Promise(resolve => setTimeout(resolve, 1800 * intento));
+                return verificarGuardadoGoogleSheets(datosParaGuardar, mesSeleccionado, intento + 1);
+            }
+
             return false;
         }
+    }
+
+    async function guardarEnGoogleSheets() {
+        const mesSeleccionado = document.getElementById('monthInput').value;
+        const datosParaGuardar = [];
+
+        Object.keys(ordenesNuevas).forEach(clave => {
+            const [sucursal, proveedor] = clave.split('-');
+            const datos = datosConsolidados[sucursal]?.[proveedor];
+
+            const cumplimiento = (typeof datos === 'object' && datos?.pedidoTotal !== undefined)
+                ? (datos.pedidoTotal > 0
+                    ? Math.round((datos.recibidoTotal / datos.pedidoTotal) * 100)
+                    : 0)
+                : Number(datos);
+
+            Array.from(ordenesNuevas[clave]).forEach(orden => {
+                datosParaGuardar.push({
+                    Sucursal: parseInt(sucursal, 10),
+                    Proveedor: proveedor,
+                    Cumplimiento: cumplimiento,
+                    Mes: mesSeleccionado,
+                    Usuario: 'Sistema',
+                    Orden: orden
+                });
+            });
+        });
+
+        if (datosParaGuardar.length === 0) return true;
+
+        const payload = JSON.stringify(datosParaGuardar);
+
+        for (let intento = 1; intento <= 3; intento++) {
+            try {
+                const fd = new URLSearchParams();
+                fd.append('action', 'save');
+                fd.append('data', payload);
+
+                const result = await fetchJSON(GOOGLE_SHEETS_URL, {
+                    method: 'POST',
+                    body: fd
+                });
+
+                if (result?.success) {
+                    DASHBOARD_DATA_CACHE = null;
+                    const verificado = await verificarGuardadoGoogleSheets(
+                        datosParaGuardar,
+                        mesSeleccionado
+                    );
+                    if (verificado) return true;
+                } else {
+                    console.warn(`⚠️ Google Sheets no confirmó el guardado (intento ${intento}):`, result);
+                }
+            } catch (error) {
+                // Puede ocurrir el 404 de ContentService aun cuando doPost
+                // haya terminado correctamente y escrito en Sheets.
+                console.warn(`⚠️ Error de respuesta al guardar (intento ${intento}/3):`, error.message);
+            }
+
+            // Antes de repetir el POST, comprobamos si el primer intento
+            // sí llegó a ejecutar el guardado.
+            const yaGuardado = await verificarGuardadoGoogleSheets(
+                datosParaGuardar,
+                mesSeleccionado
+            );
+
+            if (yaGuardado) {
+                DASHBOARD_DATA_CACHE = null;
+                return true;
+            }
+
+            if (intento < 3) {
+                await new Promise(resolve => setTimeout(resolve, 2000 * intento));
+            }
+        }
+
+        console.error('❌ No fue posible confirmar la persistencia en Google Sheets.');
+        return false;
     }
 
     // ════════════════════════════════════════════════════
