@@ -1068,6 +1068,21 @@
         });
     }
 
+    async function jsonpGetConReintentos(url, intentos = 3, esperaMs = 900) {
+        let ultimoError = null;
+        for (let intento = 1; intento <= intentos; intento++) {
+            try {
+                return await jsonpGet(url, 15000);
+            } catch (error) {
+                ultimoError = error;
+                if (intento < intentos) {
+                    await new Promise(resolve => setTimeout(resolve, esperaMs * intento));
+                }
+            }
+        }
+        throw ultimoError || new Error('No se pudo consultar Google Apps Script.');
+    }
+
     async function probarConexionSheets(mostrarAlerta = true) {
         try {
             const datos = await jsonpGet(`${GOOGLE_SHEETS_URL}?action=get_ra_config`);
@@ -2784,17 +2799,28 @@
         }
 
         try {
-            const fd = new URLSearchParams();
-            fd.append('action', 'save_validacion_0');
-            fd.append('mes', mes);
-            fd.append('sucursal', String(sucursal).replace(/\D/g, '').padStart(3, '0'));
-            fd.append('proveedor', String(proveedor).trim().toUpperCase());
-            fd.append('usuario', String(responsable).trim());
-
-            const result = await fetchJSON(GOOGLE_SHEETS_URL, {
-                method: 'POST',
-                body: fd
+            /*
+             * IMPORTANTE:
+             * La escritura se hace por GET + JSONP, igual que las lecturas.
+             * Desde GitHub Pages, el POST a /exec puede atravesar el redirect
+             * de Apps Script/ContentService y terminar en una respuesta 404 o
+             * sin los parámetros esperados. La validación es idempotente en
+             * Apps Script, por lo que el reintento es seguro.
+             */
+            const params = new URLSearchParams({
+                action: 'save_validacion_0',
+                mes: mes,
+                sucursal: String(sucursal).replace(/\D/g, '').padStart(3, '0'),
+                proveedor: String(proveedor).trim().toUpperCase(),
+                usuario: String(responsable).trim(),
+                _t: String(Date.now())
             });
+
+            const result = await jsonpGetConReintentos(
+                `${GOOGLE_SHEETS_URL}?${params.toString()}`,
+                3,
+                900
+            );
 
             if (!result || !result.success) {
                 throw new Error(result?.error || 'No fue posible guardar la validación.');
