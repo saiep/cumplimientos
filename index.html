@@ -1993,10 +1993,13 @@
         const orders = info.orders || {};
         Object.keys(orders).forEach(clave => {
             const [sucursal, proveedor] = clave.split('|');
-            const cantidad = Number(orders[clave]) || 0;
-            if (!cantidad) return;
+            const raw = orders[clave];
+            const lista = Array.isArray(raw)
+                ? raw.map(v => String(v).trim()).filter(Boolean)
+                : Array.from({length: Number(raw) || 0}, (_, i) => String(i + 1));
+            if (!lista.length) return;
             const key = `${sucursal}-${proveedor}`;
-            ordenesProceadas[key] = new Set(Array.from({length: cantidad}, (_, i) => String(i + 1)));
+            ordenesProceadas[key] = new Set(lista);
         });
         return true;
     }
@@ -2159,7 +2162,7 @@
                 }
 
                 totalInsertados += Number(result.insertados || 0);
-                console.log(`✅ Lote ${numeroLote}/${totalLotes} guardado. Recibidos: ${result.recibidos || lote.length} | Insertados: ${result.insertados || 0}`);
+                console.log(`✅ Lote ${numeroLote}/${totalLotes} guardado. Recibidos: ${result.recibidos || lote.length} | Insertados: ${result.insertados || 0} | Actualizados: ${result.actualizados || 0} | Persistidos: ${result.persistidos || 0}`);
             } catch (error) {
                 console.error(`❌ Error guardando lote ${numeroLote}/${totalLotes}:`, error);
                 return false;
@@ -2167,7 +2170,7 @@
         }
 
         DASHBOARD_DATA_CACHE = null;
-        console.log(`✅ Guardado finalizado en Google Sheets. Registros enviados: ${datosParaGuardar.length}. Nuevos insertados: ${totalInsertados}.`);
+        console.log(`✅ Guardado finalizado y verificado en Google Sheets. Registros enviados: ${datosParaGuardar.length}. Nuevos insertados: ${totalInsertados}.`);
         return true;
     }
 
