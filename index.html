@@ -678,6 +678,10 @@
         .dashboard-observaciones-alert-title { font-weight:800; color:#b42318; margin-bottom:8px; }
         .dashboard-observacion-zero-item { margin:7px 0; padding-left:2px; color:#7f1d1d; font-size:.88em; line-height:1.45; }
         .dashboard-observacion-zero-item strong { color:#991b1b; }
+        .btn-validar-cero { border:1px solid #2e7d32; background:#eaf7ec; color:#236b2a; border-radius:7px; font-size:.76em; font-weight:800; cursor:pointer; padding:6px 10px; white-space:nowrap; }
+        .btn-validar-cero:hover { background:#dff2e2; }
+        .btn-validaciones-admin { background:#eef7ff; color:#1565c0; border:1px solid #90caf9; }
+        .btn-validaciones-admin:hover { background:#e3f2fd; }
         .dashboard-observaciones-alert-note { margin-top:9px; padding-top:8px; border-top:1px solid #f3caca; color:#7f1d1d; font-size:.78em; line-height:1.4; }
 
         @media (max-width:900px){ .coverage-ranking{grid-template-columns:repeat(2,minmax(0,1fr));} }
@@ -773,6 +777,7 @@
         <button class="btn btn-ra admin-only" onclick="abrirAdminRA()">🔵 Configurar RA (Admin)</button>
         <button class="btn btn-secondary admin-only" onclick="abrirAdminZonas()">⚙️ Administrar zonas y sucursales</button>
         <button class="btn btn-secondary admin-only" onclick="probarConexionSheets(true)">🔌 Probar conexión Sheets</button>
+        <button class="btn btn-secondary btn-validaciones-admin admin-only" id="btnValidaciones0Admin" onclick="abrirAdminValidaciones0()">🛡️ Validar 0% pendientes</button>
         <button class="btn btn-warning admin-only" onclick="borrarDatosCargados()">🗑️ Borrar Datos Cargados</button>
         <button class="btn btn-danger admin-only" onclick="limpiarConClave()">🗑️ Limpiar Todo (Admin)</button>
     </div>
@@ -983,6 +988,8 @@
 
     const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzFqlqtyCQ0h0eCOfw3G5XQIunyazkFV6lL8WfnBGLPeCXwjivC-iAqXGuVp5ycfYQBUA/exec';    
     let DASHBOARD_DATA_CACHE = null;
+    // Validaciones persistentes de casos 0%. Clave: MES|SUCURSAL|PROVEEDOR
+    let VALIDACIONES_0 = {};
 
     // ── Conexión robusta con Google Apps Script ──
     async function fetchJSON(url, options = {}) {
@@ -1459,6 +1466,7 @@
             const btnAcceso = document.getElementById('btnAdminAccess');
             if (btnSalir) btnSalir.style.display = 'inline-block';
             if (btnAcceso) btnAcceso.style.display = 'none';
+            actualizarBotonValidaciones0();
             alert('✅ Modo administrador activado.');
         } else {
             alert('❌ Contraseña incorrecta.');
@@ -1472,8 +1480,10 @@
         // Cerramos cualquier ventana administrativa abierta, sin borrar datos.
         const modalRA = document.getElementById('modalRA');
         const modalZonas = document.getElementById('modalZonas');
+        const modalValidaciones0 = document.getElementById('modalAdminValidaciones0');
         if (modalRA) modalRA.style.display = 'none';
         if (modalZonas) modalZonas.style.display = 'none';
+        if (modalValidaciones0) modalValidaciones0.remove();
 
         const btnSalir = document.getElementById('btnAdminExit');
         const btnAcceso = document.getElementById('btnAdminAccess');
@@ -1867,8 +1877,25 @@
                 }
             });
         }
+        // Validaciones persistentes de 0%
+        VALIDACIONES_0 = {};
+        if (Array.isArray(paqueteNormalizado.validaciones0)) {
+            paqueteNormalizado.validaciones0.forEach(row => {
+                const mes = String(row.Mes || '').trim();
+                const suc = String(row.Sucursal || '').replace(/\D/g, '').padStart(3, '0');
+                const prov = String(row.Proveedor || '').trim().toUpperCase();
+                if (/^\d{4}-\d{2}$/.test(mes) && /^\d{3}$/.test(suc) && PROVEEDORES.includes(prov)) {
+                    VALIDACIONES_0[`${mes}|${suc}|${prov}`] = {
+                        fecha: row.Fecha || '',
+                        usuario: row.Usuario || 'Sucursal'
+                    };
+                }
+            });
+        }
+
         console.log('✅ Paquete dashboard cargado:', Object.keys(paquete.meses || {}).length, 'meses');
         console.log('✅ Config RA:', SUCURSALES_RA);
+        console.log('✅ Validaciones 0% cargadas:', Object.keys(VALIDACIONES_0).length);
     }
 
     function aplicarMesDesdeCache(mes) {
@@ -1917,6 +1944,10 @@
                 `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mes)}`,
                 30000
             );
+
+            if (!datos || datos.error || datos.success === false) {
+                throw new Error(datos?.error || 'Google Sheets devolvió una respuesta inválida.');
+            }
 
             aplicarPaqueteDashboard(datos);
             return DASHBOARD_DATA_CACHE;
@@ -2557,6 +2588,241 @@
             </div>`;
     }
 
+    function claveValidacion0(mes, sucursal, proveedor) {
+        const m = String(mes || '').trim();
+        const s = String(sucursal || '').replace(/\D/g, '').padStart(3, '0');
+        const p = String(proveedor || '').trim().toUpperCase();
+        return `${m}|${s}|${p}`;
+    }
+
+    function estaValidadoCero(sucursal, proveedor, mes = null) {
+        const periodo = mes || document.getElementById('monthInput')?.value || getMesActual();
+        return Boolean(VALIDACIONES_0[claveValidacion0(periodo, sucursal, proveedor)]);
+    }
+
+    function cerrarModalValidacion0() {
+        const modal = document.getElementById('modalValidacion0');
+        if (modal) modal.remove();
+    }
+
+    function obtenerCerosPendientesValidacion() {
+        const mes = document.getElementById('monthInput')?.value || getMesActual();
+        const sucursales = obtenerSucursalesZonaDashboard();
+        const pendientes = [];
+
+        sucursales.forEach(sucursal => {
+            PROVEEDORES.forEach(proveedor => {
+                const esND = SUCURSALES_NO_DISPONIBLE[sucursal]?.includes(proveedor);
+                const esRA = (SUCURSALES_RA[proveedor] || []).includes(sucursal);
+                if (esND || esRA) return;
+
+                const dato = datosConsolidados[sucursal]?.[proveedor];
+                const cumplimiento = cumplimientoDeDato(dato);
+                if (cumplimiento !== null && Number(cumplimiento) === 0 && !estaValidadoCero(sucursal, proveedor, mes)) {
+                    pendientes.push({ sucursal, proveedor });
+                }
+            });
+        });
+
+        return pendientes;
+    }
+
+    function actualizarBotonValidaciones0() {
+        const boton = document.getElementById('btnValidaciones0Admin');
+        if (!boton) return;
+        const cantidad = obtenerCerosPendientesValidacion().length;
+        boton.textContent = cantidad
+            ? `🛡️ Validar 0% pendientes (${cantidad})`
+            : '🛡️ Validar 0% pendientes';
+    }
+
+    function cerrarModalAdminValidaciones0() {
+        const modal = document.getElementById('modalAdminValidaciones0');
+        if (modal) modal.remove();
+    }
+
+    function abrirAdminValidaciones0() {
+        if (!modoAdmin) {
+            alert('🔐 Esta función está disponible únicamente en modo administrador.');
+            return;
+        }
+
+        cerrarModalAdminValidaciones0();
+        const mes = document.getElementById('monthInput')?.value || getMesActual();
+        const pendientes = obtenerCerosPendientesValidacion();
+
+        const filas = pendientes.length
+            ? pendientes.map((item, index) => `
+                <div style="display:grid;grid-template-columns:70px 1fr 110px;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #edf0f5;">
+                    <strong style="color:#243447;">${item.sucursal}</strong>
+                    <div><strong style="color:#7f1d1d;">${item.proveedor}</strong><div style="font-size:.78em;color:#7b8794;">0% de cumplimiento · pendiente</div></div>
+                    <button type="button" class="btn-validar-cero" onclick="abrirValidacionCero('${item.sucursal}','${item.proveedor}')">✅ Validar</button>
+                </div>`).join('')
+            : `<div style="padding:24px 10px;text-align:center;color:#5f6b7a;">✅ No hay cumplimientos 0% pendientes de validación para <strong>${mes}</strong> en <strong>${zonaSeleccionada}</strong>.</div>`;
+
+        const modalHTML = `
+            <div id="modalAdminValidaciones0" class="modal-overlay">
+                <div class="modal-box" style="max-width:720px;max-height:82vh;overflow:auto;">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:15px;margin-bottom:6px;">
+                        <div>
+                            <h2 style="margin-bottom:5px;color:#243447;">🛡️ Validación de cumplimientos 0%</h2>
+                            <p class="modal-subtitle" style="margin-bottom:0;">Solo disponible para Administración · ${mes} · ${zonaSeleccionada}</p>
+                        </div>
+                        <span style="padding:6px 10px;border-radius:20px;background:#fff5f5;color:#b42318;font-weight:800;font-size:.82em;white-space:nowrap;">${pendientes.length} pendiente${pendientes.length === 1 ? '' : 's'}</span>
+                    </div>
+
+                    <div style="margin:16px 0;padding:12px 14px;background:#f7f9fc;border:1px solid #e1e5ec;border-radius:9px;color:#4b5563;font-size:.84em;line-height:1.45;">
+                        Desde aquí Administración puede revisar cada 0%. La validación confirma que la sucursal revisó la OC y que el incumplimiento del proveedor es real. Una vez validado, el caso deja de generar alerta, pero el 0% permanece en la matriz e indicadores.
+                    </div>
+
+                    <div style="border:1px solid #e1e5ec;border-radius:10px;padding:0 14px;background:#fff;">
+                        ${filas}
+                    </div>
+
+                    <div class="modal-actions" style="margin-top:18px;">
+                        <button type="button" class="btn btn-secondary" onclick="cerrarModalAdminValidaciones0()">Cerrar</button>
+                    </div>
+                </div>
+            </div>`;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    function abrirValidacionCero(sucursal, proveedor) {
+        const mes = document.getElementById('monthInput')?.value || getMesActual();
+        const dato = datosConsolidados[sucursal]?.[proveedor];
+        const cumplimiento = cumplimientoDeDato(dato);
+
+        if (Number(cumplimiento) !== 0) {
+            alert('⚠️ El dato ya no es 0%. La validación no corresponde.');
+            return;
+        }
+
+        if (estaValidadoCero(sucursal, proveedor, mes)) {
+            alert('✅ Este 0% ya fue validado por la sucursal.');
+            return;
+        }
+
+        cerrarModalValidacion0();
+
+        const modalHTML = `
+            <div id="modalValidacion0" class="modal-overlay">
+                <div class="modal-box" style="max-width:570px;">
+                    <h2 style="margin-bottom:8px;color:#b42318;">🚨 Validación de cumplimiento 0%</h2>
+                    <p class="modal-subtitle" style="margin-bottom:18px;">
+                        La sucursal debe confirmar que revisó la Orden de Compra (OC) y que el 0% corresponde
+                        efectivamente a un incumplimiento del proveedor.
+                    </p>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+                        <div style="padding:12px;background:#f7f8fb;border:1px solid #e1e5ec;border-radius:9px;">
+                            <div style="font-size:.76em;color:#7b8794;font-weight:700;text-transform:uppercase;">Sucursal</div>
+                            <div style="font-size:1.25em;font-weight:800;color:#243447;">${sucursal}</div>
+                        </div>
+                        <div style="padding:12px;background:#f7f8fb;border:1px solid #e1e5ec;border-radius:9px;">
+                            <div style="font-size:.76em;color:#7b8794;font-weight:700;text-transform:uppercase;">Proveedor</div>
+                            <div style="font-size:1.05em;font-weight:800;color:#243447;">${proveedor}</div>
+                        </div>
+                    </div>
+
+                    <div style="padding:13px 14px;background:#fff5f5;border:1px solid #f3caca;border-radius:9px;margin-bottom:16px;color:#7f1d1d;line-height:1.45;">
+                        <strong>Confirmación requerida:</strong><br>
+                        La sucursal verificó la OC y confirma que el <strong>0% de cumplimiento</strong>
+                        corresponde a un incumplimiento real del proveedor.
+                    </div>
+
+                    <div style="margin-bottom:14px;">
+                        <label for="responsableValidacion0" style="display:block;margin-bottom:6px;color:#243447;font-weight:700;">Responsable de la validación:</label>
+                        <input id="responsableValidacion0" type="text" maxlength="100" placeholder="Nombre / responsable de la sucursal"
+                               style="width:100%;padding:10px 12px;border:2px solid #d8dce8;border-radius:8px;font-size:.95em;">
+                    </div>
+
+                    <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:18px;color:#243447;font-weight:600;line-height:1.4;">
+                        <input type="checkbox" id="chkConfirmar0" style="margin-top:4px;width:18px;height:18px;accent-color:#2e7d32;">
+                        <span>Confirmo que la información fue revisada y que corresponde quitar la alerta de este 0%.</span>
+                    </label>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-warning" onclick="cerrarModalValidacion0()">❌ Cancelar</button>
+                        <button type="button" class="btn btn-primary" id="btnConfirmarValidacion0" disabled style="opacity:.55;">✅ Confirmar 0%</button>
+                    </div>
+                </div>
+            </div>`;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        const checkbox = document.getElementById('chkConfirmar0');
+        const responsable = document.getElementById('responsableValidacion0');
+        const boton = document.getElementById('btnConfirmarValidacion0');
+
+        const actualizarEstadoBoton = () => {
+            const habilitado = Boolean(checkbox?.checked && responsable?.value.trim());
+            if (boton) {
+                boton.disabled = !habilitado;
+                boton.style.opacity = habilitado ? '1' : '.55';
+                boton.style.cursor = habilitado ? 'pointer' : 'not-allowed';
+            }
+        };
+
+        checkbox?.addEventListener('change', actualizarEstadoBoton);
+        responsable?.addEventListener('input', actualizarEstadoBoton);
+        responsable?.focus();
+
+        boton?.addEventListener('click', function() {
+            const nombre = responsable?.value.trim() || '';
+            if (!checkbox?.checked || !nombre) return;
+            guardarValidacionCero(sucursal, proveedor, nombre);
+        });
+    }
+
+    async function guardarValidacionCero(sucursal, proveedor, responsable) {
+        const mes = document.getElementById('monthInput')?.value || getMesActual();
+        const boton = document.getElementById('btnConfirmarValidacion0');
+        if (boton) {
+            boton.disabled = true;
+            boton.textContent = '⏳ Guardando…';
+        }
+
+        try {
+            const fd = new URLSearchParams();
+            fd.append('action', 'save_validacion_0');
+            fd.append('mes', mes);
+            fd.append('sucursal', String(sucursal).replace(/\D/g, '').padStart(3, '0'));
+            fd.append('proveedor', String(proveedor).trim().toUpperCase());
+            fd.append('usuario', String(responsable).trim());
+
+            const result = await fetchJSON(GOOGLE_SHEETS_URL, {
+                method: 'POST',
+                body: fd
+            });
+
+            if (!result || !result.success) {
+                throw new Error(result?.error || 'No fue posible guardar la validación.');
+            }
+
+            const clave = claveValidacion0(mes, sucursal, proveedor);
+            VALIDACIONES_0[clave] = {
+                fecha: result.fecha || new Date().toISOString(),
+                usuario: result.usuario || responsable
+            };
+
+            cerrarModalValidacion0();
+            renderObservacionesDashboard();
+            if (document.getElementById('modalAdminValidaciones0')) {
+                cerrarModalAdminValidaciones0();
+                abrirAdminValidaciones0();
+            }
+            alert(`✅ 0% validado correctamente.\n\nSucursal ${String(sucursal).padStart(3, '0')} · ${proveedor}\nValidó: ${result.usuario || responsable}\nLa alerta dejará de aparecer para ${mes}.`);
+        } catch (error) {
+            console.error('❌ Error guardando validación 0%:', error);
+            if (boton) {
+                boton.disabled = false;
+                boton.textContent = '✅ Confirmar 0%';
+            }
+            alert('❌ No se pudo guardar la validación.\n\n' + error.message);
+        }
+    }
+
     function renderObservacionesDashboard() {
         const cont = document.getElementById('dashboardObservaciones');
         if (!cont) return;
@@ -2601,19 +2867,26 @@
             return `<div class="dashboard-observacion-item">- <strong>Sucursal ${o.suc}:</strong> No se registran pedidos de <strong>${proveedores}</strong>.</div>`;
         }).join('');
 
-        const listaCeros = ceros.map(o => {
-            const proveedores = o.proveedores.length === 1
-                ? o.proveedores[0]
-                : o.proveedores.length === 2
-                    ? `${o.proveedores[0]} y ${o.proveedores[1]}`
-                    : `${o.proveedores.slice(0,-1).join(', ')} y ${o.proveedores[o.proveedores.length-1]}`;
-            return `<div class="dashboard-observacion-zero-item">🚨 <strong>Sucursal ${o.suc}:</strong> <strong>0% de cumplimiento</strong> en <strong>${proveedores}</strong>. Validar la carga de la OC y, si la OC es correcta, confirmar el incumplimiento del proveedor.</div>`;
+        // Los 0% ya validados por la sucursal dejan de generar alerta.
+        const cerosPendientes = [];
+        ceros.forEach(o => {
+            o.proveedores.forEach(prov => {
+                if (!estaValidadoCero(o.suc, prov)) {
+                    cerosPendientes.push({ suc: o.suc, proveedor: prov });
+                }
+            });
+        });
+
+        const listaCeros = cerosPendientes.map(o => {
+            return `<div class="dashboard-observacion-zero-item">
+                🚨 <strong>Sucursal ${o.suc}:</strong> <strong>0% de cumplimiento</strong> en <strong>${o.proveedor}</strong>.
+            </div>`;
         }).join('');
 
         let html = '';
 
-        if (ceros.length) {
-            html += `<div class="dashboard-observaciones-alert"><div class="dashboard-observaciones-alert-title">🚨 Cumplimientos 0% — requieren revisión</div>${listaCeros}<div class="dashboard-observaciones-alert-note">Un 0% no significa falta de carga: es un dato registrado. Puede corresponder a una OC mal cargada o a un incumplimiento real del proveedor.</div></div>`;
+        if (cerosPendientes.length) {
+            html += `<div class="dashboard-observaciones-alert"><div class="dashboard-observaciones-alert-title">🚨 Cumplimientos 0% — requieren revisión</div>${listaCeros}<div class="dashboard-observaciones-alert-note">Un 0% no significa falta de carga: es un dato registrado. La validación se realiza desde <strong>Administración → Validar 0% pendientes</strong>. Una vez validado, esta alerta dejará de mostrarse.</div></div>`;
         }
 
         if (observaciones.length) {
@@ -2625,6 +2898,7 @@
         }
 
         cont.innerHTML = html;
+        actualizarBotonValidaciones0();
     }
 
     function actualizarDashboardActual() {
@@ -3105,6 +3379,198 @@
 
     function actualizarBotonesExportacionSeguro() {
         if (typeof actualizarBotonesExportacion === 'function') actualizarBotonesExportacion();
+    }
+
+    // ════════════════════════════════════════════════════
+    // BORRAR / LIMPIAR — menú de administración
+    // ════════════════════════════════════════════════════
+    async function borrarDatosCargados() {
+        if (!modoAdmin) {
+            alert('🔐 Primero active el modo administrador.');
+            return;
+        }
+
+        const sucursalesConDatos = Object.keys(datosConsolidados)
+            .filter(suc => datosConsolidados[suc] && Object.keys(datosConsolidados[suc]).length > 0)
+            .sort((a,b) => Number(a) - Number(b));
+
+        if (sucursalesConDatos.length === 0) {
+            alert('⚠️ No hay datos cargados en el período seleccionado para borrar.');
+            return;
+        }
+
+        cerrarModalBorrar();
+
+        const modalHTML = `
+            <div id="modalBorrar" class="modal-overlay">
+                <div class="modal-box" style="max-width:500px;">
+                    <h2 style="text-align:center;margin-bottom:8px;">🗑️ Borrar datos cargados</h2>
+                    <p class="modal-subtitle" style="text-align:center;">
+                        Seleccioná la sucursal y el proveedor cuyos datos querés eliminar del período actual.
+                    </p>
+
+                    <div style="margin-bottom:15px;">
+                        <label style="font-weight:700;color:#2c3e50;display:block;margin-bottom:6px;">Sucursal:</label>
+                        <select id="selectSucursal" style="width:100%;padding:10px 12px;border:2px solid #667eea;border-radius:7px;font-size:1em;">
+                            <option value="">-- Seleccione Sucursal --</option>
+                            ${sucursalesConDatos.map(s => `<option value="${s}">${s}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom:20px;">
+                        <label style="font-weight:700;color:#2c3e50;display:block;margin-bottom:6px;">Proveedor:</label>
+                        <select id="selectProveedor" style="width:100%;padding:10px 12px;border:2px solid #667eea;border-radius:7px;font-size:1em;" disabled>
+                            <option value="">-- Primero seleccione sucursal --</option>
+                        </select>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-warning" onclick="cerrarModalBorrar()">❌ Cancelar</button>
+                        <button type="button" class="btn btn-danger" onclick="ejecutarBorrado()" id="btnConfirmarBorrado" disabled style="opacity:.55;">🗑️ Borrar</button>
+                    </div>
+                </div>
+            </div>`;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        const selectSucursal = document.getElementById('selectSucursal');
+        const selectProveedor = document.getElementById('selectProveedor');
+        const btn = document.getElementById('btnConfirmarBorrado');
+
+        selectSucursal.addEventListener('change', function() {
+            const suc = this.value;
+            if (suc) {
+                const proveedores = Object.keys(datosConsolidados[suc] || {})
+                    .filter(p => datosConsolidados[suc][p] !== undefined && datosConsolidados[suc][p] !== null);
+                selectProveedor.disabled = false;
+                selectProveedor.innerHTML = '<option value="">-- Seleccione Proveedor --</option>' +
+                    proveedores.map(p => `<option value="${p}">${p}</option>`).join('');
+            } else {
+                selectProveedor.disabled = true;
+                selectProveedor.innerHTML = '<option value="">-- Primero seleccione sucursal --</option>';
+            }
+            btn.disabled = true;
+            btn.style.opacity = '.55';
+        });
+
+        selectProveedor.addEventListener('change', function() {
+            btn.disabled = !this.value;
+            btn.style.opacity = this.value ? '1' : '.55';
+        });
+    }
+
+    function cerrarModalBorrar() {
+        const m = document.getElementById('modalBorrar');
+        if (m) m.remove();
+    }
+
+    async function ejecutarBorrado() {
+        if (!modoAdmin) {
+            alert('🔐 Primero active el modo administrador.');
+            return;
+        }
+
+        const suc = document.getElementById('selectSucursal')?.value;
+        const prov = document.getElementById('selectProveedor')?.value;
+        const mes = document.getElementById('monthInput')?.value || getMesActual();
+
+        if (!suc || !prov) {
+            alert('⚠️ Seleccione sucursal y proveedor.');
+            return;
+        }
+
+        if (!confirm(`¿Borrar los datos de:\nSucursal: ${suc}\nProveedor: ${prov}\nMes: ${mes}?\n\nEsta acción eliminará los registros de Google Sheets.`)) {
+            return;
+        }
+
+        const btn = document.getElementById('btnConfirmarBorrado');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Borrando…'; }
+
+        try {
+            const fd = new URLSearchParams();
+            fd.append('action', 'delete_specific');
+            fd.append('mes', mes);
+            fd.append('sucursal', parseInt(suc, 10));
+            fd.append('proveedor', prov);
+
+            const result = await fetchJSON(GOOGLE_SHEETS_URL, {
+                method: 'POST',
+                body: fd
+            });
+
+            if (!result || !result.success) {
+                throw new Error(result?.error || 'Google Sheets no confirmó el borrado.');
+            }
+
+            if (datosConsolidados[suc]) delete datosConsolidados[suc][prov];
+            const clave = `${suc}-${prov}`;
+            if (ordenesProceadas[clave]) delete ordenesProceadas[clave];
+
+            cerrarModalBorrar();
+            generarTabla();
+            actualizarDashboardActual();
+            alert(`✅ Datos borrados correctamente.\n\nSucursal ${suc} · ${prov}\nRegistros eliminados: ${result.eliminados ?? 0}`);
+        } catch (e) {
+            console.error('❌ Error borrando datos:', e);
+            if (btn) { btn.disabled = false; btn.textContent = '🗑️ Borrar'; }
+            alert('❌ No se pudieron borrar los datos.\n\n' + e.message);
+        }
+    }
+
+    async function limpiarConClave() {
+        if (!modoAdmin) {
+            alert('🔐 Primero active el modo administrador.');
+            return;
+        }
+
+        const clave = prompt('🔐 Contraseña de administrador:');
+        if (clave !== 'admin2026') {
+            if (clave !== null) alert('❌ Contraseña incorrecta');
+            return;
+        }
+
+        const mes = document.getElementById('monthInput')?.value || getMesActual();
+        const sucursalesZona = ZONAS[zonaSeleccionada] || [];
+
+        if (!sucursalesZona.length) {
+            alert('⚠️ No hay sucursales configuradas para la zona seleccionada.');
+            return;
+        }
+
+        if (!confirm(`¿Limpiar todos los datos de ${zonaSeleccionada} del mes ${mes}?\n\n⚠️ ESTA ACCIÓN NO SE PUEDE DESHACER`)) {
+            return;
+        }
+
+        try {
+            const fd = new URLSearchParams();
+            fd.append('action', 'delete_zone');
+            fd.append('mes', mes);
+            fd.append('sucursales', JSON.stringify(sucursalesZona.map(s => parseInt(s, 10))));
+
+            const result = await fetchJSON(GOOGLE_SHEETS_URL, {
+                method: 'POST',
+                body: fd
+            });
+
+            if (!result || !result.success) {
+                throw new Error(result?.error || 'Google Sheets no confirmó la limpieza.');
+            }
+
+            sucursalesZona.forEach(suc => {
+                datosConsolidados[suc] = {};
+                PROVEEDORES.forEach(p => {
+                    const k = `${suc}-${p}`;
+                    if (ordenesProceadas[k]) delete ordenesProceadas[k];
+                });
+            });
+
+            generarTabla();
+            actualizarDashboardActual();
+            alert(`✅ ${result.eliminados ?? 0} registros eliminados de ${zonaSeleccionada} · ${mes}.`);
+        } catch (e) {
+            console.error('❌ Error limpiando datos:', e);
+            alert('❌ No se pudieron limpiar los datos.\n\n' + e.message);
+        }
     }
 
 </script>
