@@ -986,7 +986,7 @@
 
     const SUCURSALES_NO_DISPONIBLE = { '254': ['CCU','DANONE','MASTELLONE'] };
 
-    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbz-iK5MReOPXzttwKwS07R2yJm-7tvPhyMIXYGw4kNyK-LB1pgZjQfQ9o_YH575Fjq-/exec';    
+    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyxrumA9tNsRd4uRhLIZaPJesX79SVU2_8YdKDuzV9iLd2QmtlXuC6X0AKZ-0MdqEXfDw/exec';    
     let DASHBOARD_DATA_CACHE = null;
     // Validaciones persistentes de casos 0%. Clave: MES|SUCURSAL|PROVEEDOR
     let VALIDACIONES_0 = {};
@@ -1966,6 +1966,23 @@
             });
         }
 
+        // Segunda fuente de verdad: las marcas VALIDADO visibles en H
+        // de cada hoja mensual. Esto hace que la alerta respete exactamente
+        // lo que el usuario puede auditar en la planilla.
+        Object.entries(paqueteNormalizado.meses || {}).forEach(([mes, info]) => {
+            const visibles = info?.validaciones0;
+            if (!visibles || typeof visibles !== 'object') return;
+
+            Object.keys(visibles).forEach(clave => {
+                const [suc, prov] = clave.split('|');
+                if (!suc || !prov) return;
+                VALIDACIONES_0[claveValidacion0(mes, suc, prov)] = {
+                    fecha: '',
+                    usuario: 'Hoja mensual'
+                };
+            });
+        });
+
         console.log('✅ Paquete dashboard cargado:', Object.keys(paquete.meses || {}).length, 'meses');
         console.log('✅ Config RA:', SUCURSALES_RA);
         console.log('✅ Validaciones 0% cargadas:', Object.keys(VALIDACIONES_0).length);
@@ -1974,6 +1991,19 @@
     function aplicarMesDesdeCache(mes) {
         const info = DASHBOARD_DATA_CACHE?.meses?.[mes];
         if (!info) return false;
+
+        // Incorporar marcas VALIDADO de columna H al estado local.
+        const visibles = info.validaciones0;
+        if (visibles && typeof visibles === 'object') {
+            Object.keys(visibles).forEach(clave => {
+                const [suc, prov] = clave.split('|');
+                if (!suc || !prov) return;
+                VALIDACIONES_0[claveValidacion0(mes, suc, prov)] = {
+                    fecha: '',
+                    usuario: 'Hoja mensual'
+                };
+            });
+        }
 
         datosConsolidados = {};
         ordenesProceadas = {};
@@ -2016,8 +2046,11 @@
                     : `Reintentando conexión... intento ${intentoActual} de ${maxIntentos}`
             );
 
+            // Siempre pedimos una lectura fresca de Sheets al cargar/reintentar.
+            // Evita que una caché del Web App o una versión anterior oculte
+            // cambios manuales y validaciones recién guardadas.
             const datos = await jsonpGet(
-                `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mes)}`,
+                `${GOOGLE_SHEETS_URL}?action=get_dashboard_data&mes=${encodeURIComponent(mes)}&fresco=1&_ts=${Date.now()}`,
                 30000
             );
 
@@ -2719,7 +2752,17 @@
 
     function estaValidadoCero(sucursal, proveedor, mes = null) {
         const periodo = mes || document.getElementById('monthInput')?.value || getMesActual();
-        return Boolean(VALIDACIONES_0[claveValidacion0(periodo, sucursal, proveedor)]);
+        const clave = claveValidacion0(periodo, sucursal, proveedor);
+
+        // Fuente persistente: hoja Validaciones0.
+        if (VALIDACIONES_0[clave]) return true;
+
+        // Fuente visible/auditable: columna H de la hoja mensual.
+        // El backend la expone dentro del resumen del mes.
+        const infoMes = DASHBOARD_DATA_CACHE?.meses?.[periodo];
+        const sucProv = `${String(sucursal).replace(/\D/g, '').padStart(3, '0')}|${String(proveedor).trim().toUpperCase()}`;
+        const visibles = infoMes?.validaciones0;
+        return Boolean(visibles && (visibles[sucProv] === true || String(visibles[sucProv] || '').trim().toUpperCase() === 'VALIDADO'));
     }
 
     function cerrarModalValidacion0() {
