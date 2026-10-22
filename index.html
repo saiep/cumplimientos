@@ -990,6 +990,7 @@
     let DASHBOARD_DATA_CACHE = null;
     // Validaciones persistentes de casos 0%. Clave: MES|SUCURSAL|PROVEEDOR
     let VALIDACIONES_0 = {};
+    const VALIDACIONES_0_EN_PROCESO = new Set();
 
     // ── Conexión robusta con Google Apps Script ──
     async function fetchJSON(url, options = {}) {
@@ -2982,13 +2983,24 @@
 
     async function guardarValidacionCero(sucursal, proveedor, responsable) {
         const mes = document.getElementById('monthInput')?.value || getMesActual();
+        const clave = claveValidacion0(mes, sucursal, proveedor);
         const boton = document.getElementById('btnConfirmarValidacion0');
+
+        // Evita dobles ejecuciones desde doble clic, Enter o eventos duplicados.
+        if (VALIDACIONES_0_EN_PROCESO.has(clave)) return;
+        VALIDACIONES_0_EN_PROCESO.add(clave);
+
         if (boton) {
             boton.disabled = true;
-            boton.textContent = '⏳ Guardando…';
+            boton.textContent = '⏳ Verificando…';
         }
 
         try {
+            // La operación de guardado del servidor es idempotente.
+            // Por eso siempre llamamos a save_validacion_0: si la validación
+            // ya existe, el servidor la conserva y además limpia duplicados
+            // históricos de la misma clave.
+
             let resultadoGuardado = null;
             let ultimoError = null;
 
@@ -3007,11 +3019,6 @@
                         responsable
                     );
 
-                    /*
-                     * Exigimos una respuesta propia de save_validacion_0.
-                     * Así una respuesta genérica de una implementación vieja
-                     * no se interpreta como un guardado correcto.
-                     */
                     const guardadoConfirmado =
                         resultadoGuardado?.success === true &&
                         (
@@ -3049,11 +3056,26 @@
                 );
             }
 
-            const clave = claveValidacion0(mes, sucursal, proveedor);
+            // La respuesta de save_validacion_0 es la confirmación definitiva.
+            // El servidor ya verifica físicamente Validaciones0 + columna H antes
+            // de devolver success=true, por lo que NO hacemos una segunda lectura.
+            // Esto evita falsos negativos por latencia/lecturas cruzadas del Web App.
+            if (resultadoGuardado?.success !== true) {
+                throw new Error(
+                    resultadoGuardado?.error ||
+                    'El servidor no confirmó el guardado de la validación.'
+                );
+            }
+
             VALIDACIONES_0[clave] = {
                 fecha: resultadoGuardado.fecha || new Date().toISOString(),
                 usuario: resultadoGuardado.usuario || responsable
             };
+
+            if (DASHBOARD_DATA_CACHE?.meses?.[mes]) {
+                DASHBOARD_DATA_CACHE.meses[mes].validaciones0 = DASHBOARD_DATA_CACHE.meses[mes].validaciones0 || {};
+                DASHBOARD_DATA_CACHE.meses[mes].validaciones0[`${String(sucursal).replace(/\D/g, '').padStart(3, '0')}|${String(proveedor).trim().toUpperCase()}`] = true;
+            }
 
             cerrarModalValidacion0();
             renderObservacionesDashboard();
@@ -3075,6 +3097,8 @@
                 boton.textContent = '✅ Confirmar 0%';
             }
             alert('❌ No se pudo guardar la validación.\n\n' + error.message);
+        } finally {
+            VALIDACIONES_0_EN_PROCESO.delete(clave);
         }
     }
 
